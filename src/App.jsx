@@ -16,15 +16,16 @@ import {
   Users,
   Loader2,
 } from "lucide-react";
+import { supabase } from "./lib/supabase";
+import * as api from "./lib/api";
 
 /* ------------------------------------------------------------------
    MEYDAN — "town square"
    Tasarım: gece lacivert zemin + çini mavisi + pirinç/bakır vurgu.
-   Backend: localStorage (tarayıcı içi kalıcı depolama). Bu bir
-   prototip veritabanıdır — gerçek bir sunucu değildir, şifreler düz
-   metin saklanır ve veriler yalnızca bu tarayıcıda/bu cihazda
-   tutulur, yani kullanıcılar arası gerçek paylaşım yoktur. Gerçek
-   bir ürün için ayrı bir backend gerekir.
+   Backend: Supabase (Auth + Postgres Database + Storage + Realtime).
+   localStorage / window.storage tamamen kaldırıldı — tüm veri gerçek
+   bir Supabase projesinde saklanıyor. Kurulum adımları için README.md
+   ve supabase/schema.sql dosyalarına bakın.
 ------------------------------------------------------------------- */
 
 const COLORS = {
@@ -38,37 +39,6 @@ const COLORS = {
   bronzeSoft: "#E4B36B",
   cini: "#2E7BA6",
 };
-
-/* ---------------------------- storage helpers ---------------------------- */
-/* window.storage.get()/set() tamamen kaldırıldı — yalnızca localStorage kullanılıyor */
-
-const storageGet = (key) => {
-  try {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  } catch (e) {
-    console.error("storage get failed", key, e);
-    return null;
-  }
-};
-
-const storageSet = (key, value) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error("storage set failed", key, e);
-  }
-};
-
-const getUsers = async () => storageGet("meydan:users") || [];
-const saveUsers = async (u) => storageSet("meydan:users", u);
-const getPosts = async () => storageGet("meydan:posts") || [];
-const savePosts = async (p) => storageSet("meydan:posts", p);
-const getChats = async () => storageGet("meydan:chats") || [];
-const saveChats = async (c) => storageSet("meydan:chats", c);
-const getSession = async () => storageGet("meydan:session");
-const setSession = async (email) => storageSet("meydan:session", { email });
-const clearSession = async () => storageSet("meydan:session", null);
 
 /* ------------------------------- tile motif ------------------------------ */
 
@@ -98,8 +68,18 @@ function Logo({ size = "text-2xl" }) {
   );
 }
 
-function Avatar({ name, size = 32 }) {
+function Avatar({ name, size = 32, avatarUrl = null }) {
   const initial = name ? name[0].toUpperCase() : "?";
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        style={{ width: size, height: size, border: `1px solid ${COLORS.bronzeSoft}` }}
+        className="rounded-full object-cover flex-shrink-0"
+      />
+    );
+  }
   return (
     <div
       style={{
@@ -129,50 +109,55 @@ function AuthScreen({ onLogin }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const translateError = (err) => {
+    const msg = err?.message || "";
+    if (msg.includes("already registered") || msg.includes("already been registered")) {
+      return "Bu e-posta zaten kayıtlı.";
+    }
+    if (msg.includes("duplicate key") && msg.includes("username")) {
+      return "Bu kullanıcı adı zaten alınmış.";
+    }
+    if (msg.includes("Invalid login credentials")) {
+      return "E-posta veya şifre hatalı.";
+    }
+    if (msg.includes("Password should be at least")) {
+      return "Şifre en az 6 karakter olmalı.";
+    }
+    if (msg.includes("Email not confirmed")) {
+      return "E-posta adresini onaylaman gerekiyor. Gelen kutunu kontrol et (veya Supabase projesinde e-posta onayını kapat).";
+    }
+    return msg || "Bir şeyler ters gitti, tekrar dene.";
+  };
+
   const handleSubmit = async () => {
     setError("");
     if (!email.trim() || !password.trim()) return;
     setBusy(true);
-    const users = await getUsers();
-    const existing = users.find((u) => u.email === email.trim().toLowerCase());
-
-    if (mode === "login") {
-      if (!existing || existing.password !== password) {
-        setError("E-posta veya şifre hatalı.");
-        setBusy(false);
-        return;
+    try {
+      if (mode === "login") {
+        await api.signIn({ email: email.trim().toLowerCase(), password });
+        // onAuthStateChange App bileşeninde kullanıcıyı yükleyecek
+      } else {
+        if (!username.trim()) {
+          setError("Bir kullanıcı adı seç.");
+          setBusy(false);
+          return;
+        }
+        await api.signUp({
+          email: email.trim().toLowerCase(),
+          password,
+          username: username.trim(),
+        });
       }
-      await setSession(existing.email);
-      onLogin(existing);
-    } else {
-      if (existing) {
-        setError("Bu e-posta zaten kayıtlı.");
-        setBusy(false);
-        return;
-      }
-      if (!username.trim()) {
-        setError("Bir kullanıcı adı seç.");
-        setBusy(false);
-        return;
-      }
-      const newUser = {
-        email: email.trim().toLowerCase(),
-        username: username.trim(),
-        password,
-        bio: "",
-      };
-      await saveUsers([...users, newUser]);
-      await setSession(newUser.email);
-      onLogin(newUser);
+      onLogin();
+    } catch (err) {
+      setError(translateError(err));
     }
     setBusy(false);
   };
 
   return (
-    <div
-      className="min-h-screen w-full flex items-center justify-center"
-      style={{ background: COLORS.bg }}
-    >
+    <div className="min-h-screen w-full flex items-center justify-center" style={{ background: COLORS.bg }}>
       <div className="w-full max-w-sm px-6">
         <div
           className="rounded-lg p-8 flex flex-col items-center"
@@ -214,7 +199,11 @@ function AuthScreen({ onLogin }) {
               className="w-full text-sm px-3 py-2.5 rounded-md focus:outline-none"
               style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, color: COLORS.ivory }}
             />
-            {error && <p className="text-xs" style={{ color: "#E07A5F" }}>{error}</p>}
+            {error && (
+              <p className="text-xs" style={{ color: "#E07A5F" }}>
+                {error}
+              </p>
+            )}
             <button
               onClick={handleSubmit}
               disabled={!email.trim() || !password.trim() || busy}
@@ -247,7 +236,7 @@ function AuthScreen({ onLogin }) {
         </div>
 
         <p className="text-center text-xs mt-6" style={{ color: COLORS.muted }}>
-          Veriler bu tarayıcıda (localStorage) saklanır — bu bir prototiptir, gerçek bir güvenli sunucu değildir.
+          Veriler Supabase üzerinde, gerçek bir veritabanında saklanır.
         </p>
       </div>
     </div>
@@ -301,16 +290,12 @@ function Sidebar({ active, setActive, onLogout, user }) {
           className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1 w-full"
           style={{ background: "transparent" }}
         >
-          <Avatar name={user.username} size={28} />
+          <Avatar name={user.username} size={28} avatarUrl={user.avatar_url} />
           <span className="text-sm font-medium truncate" style={{ color: COLORS.ivory }}>
             {user.username}
           </span>
         </button>
-        <button
-          onClick={onLogout}
-          className="text-sm px-3 py-2 text-left w-full"
-          style={{ color: COLORS.muted }}
-        >
+        <button onClick={onLogout} className="text-sm px-3 py-2 text-left w-full" style={{ color: COLORS.muted }}>
           Çıkış yap
         </button>
       </div>
@@ -333,11 +318,7 @@ function MobileNav({ active, setActive }) {
     >
       {items.map(({ key, icon: Icon }) => (
         <button key={key} onClick={() => setActive(key)}>
-          <Icon
-            size={22}
-            strokeWidth={active === key ? 2.5 : 2}
-            color={active === key ? COLORS.bronzeSoft : COLORS.muted}
-          />
+          <Icon size={22} strokeWidth={active === key ? 2.5 : 2} color={active === key ? COLORS.bronzeSoft : COLORS.muted} />
         </button>
       ))}
     </div>
@@ -347,15 +328,12 @@ function MobileNav({ active, setActive }) {
 /* --------------------------------- Post ------------------------------------ */
 
 function Post({ post, currentUser, onToggleLike }) {
-  const liked = (post.likes || []).includes(currentUser.email);
+  const liked = (post.likes || []).includes(currentUser.id);
   return (
-    <div
-      className="rounded-lg mb-6 overflow-hidden"
-      style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}
-    >
+    <div className="rounded-lg mb-6 overflow-hidden" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
-          <Avatar name={post.username} size={32} />
+          <Avatar name={post.username} size={32} avatarUrl={post.avatarUrl} />
           <span className="text-sm font-semibold" style={{ color: COLORS.ivory }}>
             {post.username}
           </span>
@@ -412,15 +390,9 @@ function Feed({ loading, posts, currentUser, onToggleLike }) {
           <Spinner />
         </div>
       ) : posts.length === 0 ? (
-        <EmptyState
-          icon={ImagePlus}
-          title="Akışında henüz gönderi yok"
-          subtitle={'"Oluştur" bölümünden ilk paylaşımını yap'}
-        />
+        <EmptyState icon={ImagePlus} title="Akışında henüz gönderi yok" subtitle={'"Oluştur" bölümünden ilk paylaşımını yap'} />
       ) : (
-        posts.map((post) => (
-          <Post key={post.id} post={post} currentUser={currentUser} onToggleLike={onToggleLike} />
-        ))
+        posts.map((post) => <Post key={post.id} post={post} currentUser={currentUser} onToggleLike={onToggleLike} />)
       )}
     </div>
   );
@@ -430,37 +402,35 @@ function Feed({ loading, posts, currentUser, onToggleLike }) {
 
 function CreatePost({ user, onCreated, goTo }) {
   const [preview, setPreview] = useState(null);
+  const [file, setFile] = useState(null);
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const fileInput = useRef(null);
 
   const handleFile = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPreview(reader.result);
-    reader.readAsDataURL(file);
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    setFile(selected);
+    setPreview(URL.createObjectURL(selected));
   };
 
   const handleShare = async () => {
-    if (!preview) return;
+    if (!file) return;
     setBusy(true);
-    const posts = await getPosts();
-    const newPost = {
-      id: Date.now(),
-      email: user.email,
-      username: user.username,
-      image: preview,
-      caption,
-      likes: [],
-      time: new Date().toLocaleString("tr-TR"),
-    };
-    await savePosts([newPost, ...posts]);
+    setError("");
+    try {
+      const imageUrl = await api.uploadPostImage(user.id, file);
+      await api.createPost({ userId: user.id, imageUrl, caption });
+      setPreview(null);
+      setFile(null);
+      setCaption("");
+      await onCreated();
+      goTo("feed");
+    } catch (err) {
+      setError(err?.message || "Gönderi paylaşılamadı, tekrar dene.");
+    }
     setBusy(false);
-    setPreview(null);
-    setCaption("");
-    onCreated();
-    goTo("feed");
   };
 
   return (
@@ -484,11 +454,7 @@ function CreatePost({ user, onCreated, goTo }) {
         <input ref={fileInput} type="file" accept="image/*" onChange={handleFile} className="hidden" />
         <div className="p-4 flex flex-col gap-3">
           {preview && (
-            <button
-              onClick={() => fileInput.current?.click()}
-              className="text-xs font-semibold self-start"
-              style={{ color: COLORS.bronzeSoft }}
-            >
+            <button onClick={() => fileInput.current?.click()} className="text-xs font-semibold self-start" style={{ color: COLORS.bronzeSoft }}>
               Fotoğrafı değiştir
             </button>
           )}
@@ -500,6 +466,11 @@ function CreatePost({ user, onCreated, goTo }) {
             className="w-full text-sm px-3 py-2 rounded-md resize-none focus:outline-none"
             style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, color: COLORS.ivory }}
           />
+          {error && (
+            <p className="text-xs" style={{ color: "#E07A5F" }}>
+              {error}
+            </p>
+          )}
           <button
             onClick={handleShare}
             disabled={!preview || busy}
@@ -525,9 +496,7 @@ function Discover({ posts, users, currentUser, onOpenChat }) {
   const filteredPosts = posts.filter(
     (p) => !q || p.username.toLowerCase().includes(q) || (p.caption || "").toLowerCase().includes(q)
   );
-  const filteredUsers = users.filter(
-    (u) => u.email !== currentUser.email && (!q || u.username.toLowerCase().includes(q))
-  );
+  const filteredUsers = users.filter((u) => u.id !== currentUser.id && (!q || u.username.toLowerCase().includes(q)));
 
   return (
     <div className="max-w-3xl mx-auto py-6 px-4">
@@ -535,10 +504,7 @@ function Discover({ posts, users, currentUser, onOpenChat }) {
         Keşfet
       </h2>
       <div className="flex items-center gap-2 mb-4">
-        <div
-          className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md"
-          style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}` }}
-        >
+        <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md" style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}` }}>
           <Search size={16} color={COLORS.muted} />
           <input
             value={query}
@@ -559,10 +525,7 @@ function Discover({ posts, users, currentUser, onOpenChat }) {
             key={key}
             onClick={() => setTab(key)}
             className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded"
-            style={{
-              background: tab === key ? COLORS.surfaceAlt : "transparent",
-              color: tab === key ? COLORS.bronzeSoft : COLORS.muted,
-            }}
+            style={{ background: tab === key ? COLORS.surfaceAlt : "transparent", color: tab === key ? COLORS.bronzeSoft : COLORS.muted }}
           >
             <Icon size={13} /> {label}
           </button>
@@ -577,7 +540,10 @@ function Discover({ posts, users, currentUser, onOpenChat }) {
             {filteredPosts.map((post) => (
               <div key={post.id} className="aspect-square relative group overflow-hidden" style={{ background: COLORS.surfaceAlt }}>
                 {post.image && <img src={post.image} alt="" className="w-full h-full object-cover" />}
-                <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px]" style={{ background: "rgba(15,27,45,0.75)", color: COLORS.ivory }}>
+                <div
+                  className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px]"
+                  style={{ background: "rgba(15,27,45,0.75)", color: COLORS.ivory }}
+                >
                   {post.username}
                 </div>
               </div>
@@ -589,13 +555,9 @@ function Discover({ posts, users, currentUser, onOpenChat }) {
       ) : (
         <div className="flex flex-col gap-2">
           {filteredUsers.map((u) => (
-            <div
-              key={u.email}
-              className="flex items-center justify-between px-4 py-3 rounded-lg"
-              style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}
-            >
+            <div key={u.id} className="flex items-center justify-between px-4 py-3 rounded-lg" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
               <div className="flex items-center gap-3">
-                <Avatar name={u.username} size={40} />
+                <Avatar name={u.username} size={40} avatarUrl={u.avatar_url} />
                 <span className="text-sm font-medium" style={{ color: COLORS.ivory }}>
                   {u.username}
                 </span>
@@ -618,11 +580,11 @@ function Discover({ posts, users, currentUser, onOpenChat }) {
 /* --------------------------------- Profile ---------------------------------- */
 
 function Profile({ user, posts }) {
-  const mine = posts.filter((p) => p.email === user.email);
+  const mine = posts.filter((p) => p.userId === user.id);
   return (
     <div className="max-w-3xl mx-auto py-8 px-4">
       <div className="flex items-center gap-8 mb-6">
-        <Avatar name={user.username} size={84} />
+        <Avatar name={user.username} size={84} avatarUrl={user.avatar_url} />
         <div className="flex-1">
           <div className="flex items-center gap-4 mb-3">
             <h2 className="text-xl font-semibold" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
@@ -641,6 +603,11 @@ function Profile({ user, posts }) {
               <b>{mine.length}</b> gönderi
             </span>
           </div>
+          {user.bio && (
+            <p className="text-sm mt-2" style={{ color: COLORS.ivory }}>
+              {user.bio}
+            </p>
+          )}
           <p className="text-xs mt-3" style={{ color: COLORS.muted }}>
             {user.email}
           </p>
@@ -666,35 +633,30 @@ function Profile({ user, posts }) {
 
 /* -------------------------------- Messages ---------------------------------- */
 
-function Messages({ user, users, chats, refreshChats, openChatId, setOpenChatId }) {
+function Messages({ user, chats, refreshChats, openChatId, setOpenChatId }) {
   const [draft, setDraft] = useState("");
   const [mobileShowChat, setMobileShowChat] = useState(!!openChatId);
   const [sending, setSending] = useState(false);
 
-  const myChats = chats.filter((c) => c.participants.includes(user.email));
+  const myChats = chats; // App bileşeni zaten sadece bu kullanıcının sohbetlerini yüklüyor
   const selected = myChats.find((c) => c.id === openChatId) || null;
 
   useEffect(() => {
     if (openChatId) setMobileShowChat(true);
   }, [openChatId]);
 
-  const otherOf = (chat) => {
-    const otherEmail = chat.participants.find((e) => e !== user.email);
-    return users.find((u) => u.email === otherEmail) || { username: "silinmiş kullanıcı" };
-  };
+  const otherOf = (chat) => chat.otherUser || { username: "silinmiş kullanıcı" };
 
   const sendMessage = async () => {
     if (!draft.trim() || !selected) return;
     setSending(true);
-    const allChats = await getChats();
-    const updated = allChats.map((c) =>
-      c.id === selected.id
-        ? { ...c, messages: [...c.messages, { from: user.email, text: draft, time: "şimdi" }] }
-        : c
-    );
-    await saveChats(updated);
-    await refreshChats();
-    setDraft("");
+    try {
+      await api.sendMessage(selected.id, user.id, draft.trim());
+      setDraft("");
+      await refreshChats();
+    } catch (err) {
+      console.error("Mesaj gönderilemedi", err);
+    }
     setSending(false);
   };
 
@@ -704,10 +666,7 @@ function Messages({ user, users, chats, refreshChats, openChatId, setOpenChatId 
 
   return (
     <div className="flex h-screen md:h-auto">
-      <div
-        className={`w-full md:w-80 flex-shrink-0 ${mobileShowChat ? "hidden md:block" : "block"}`}
-        style={{ borderRight: `1px solid ${COLORS.border}` }}
-      >
+      <div className={`w-full md:w-80 flex-shrink-0 ${mobileShowChat ? "hidden md:block" : "block"}`} style={{ borderRight: `1px solid ${COLORS.border}` }}>
         <div className="px-5 py-5" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
           <h2 className="text-lg font-bold" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
             Mesajlar
@@ -723,7 +682,7 @@ function Messages({ user, users, chats, refreshChats, openChatId, setOpenChatId 
               className="w-full flex items-center gap-3 px-5 py-3 text-left"
               style={{ background: openChatId === chat.id ? COLORS.surface : "transparent" }}
             >
-              <Avatar name={other.username} size={44} />
+              <Avatar name={other.username} size={44} avatarUrl={other.avatar_url} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium" style={{ color: COLORS.ivory }}>
                   {other.username}
@@ -743,7 +702,7 @@ function Messages({ user, users, chats, refreshChats, openChatId, setOpenChatId 
             <button className="md:hidden" onClick={() => setMobileShowChat(false)}>
               <ArrowLeft size={20} color={COLORS.ivory} />
             </button>
-            <Avatar name={otherOf(selected).username} size={34} />
+            <Avatar name={otherOf(selected).username} size={34} avatarUrl={otherOf(selected).avatar_url} />
             <span className="text-sm font-semibold" style={{ color: COLORS.ivory }}>
               {otherOf(selected).username}
             </span>
@@ -754,7 +713,7 @@ function Messages({ user, users, chats, refreshChats, openChatId, setOpenChatId 
                 key={i}
                 className="max-w-[70%] px-4 py-2 rounded-2xl text-sm"
                 style={
-                  m.from === user.email
+                  m.from === user.id
                     ? { alignSelf: "flex-end", background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }
                     : { alignSelf: "flex-start", background: COLORS.surface, color: COLORS.ivory }
                 }
@@ -799,58 +758,113 @@ export default function Meydan() {
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [openChatId, setOpenChatId] = useState(null);
 
-  const refreshPosts = useCallback(async () => setPosts(await getPosts()), []);
-  const refreshUsers = useCallback(async () => setUsers(await getUsers()), []);
-  const refreshChats = useCallback(async () => setChats(await getChats()), []);
-
-  // Oturum kontrolü
-  useEffect(() => {
-    (async () => {
-      const session = await getSession();
-      if (session?.email) {
-        const all = await getUsers();
-        const found = all.find((u) => u.email === session.email);
-        if (found) setUser(found);
-      }
-      setCheckingSession(false);
-    })();
+  const refreshPosts = useCallback(async () => setPosts(await api.fetchPosts()), []);
+  const refreshUsers = useCallback(async () => setUsers(await api.fetchProfiles()), []);
+  const refreshChats = useCallback(async () => {
+    const session = await api.getCurrentSession();
+    if (!session?.user?.id) return;
+    setChats(await api.fetchChats(session.user.id));
   }, []);
 
+  const loadUserFromSession = useCallback(async (sessionUser) => {
+    if (!sessionUser) {
+      setUser(null);
+      return;
+    }
+    try {
+      const profile = await api.fetchProfile(sessionUser.id);
+      setUser({ ...profile, id: sessionUser.id, email: sessionUser.email });
+    } catch (err) {
+      console.error("Profil yüklenemedi", err);
+      setUser(null);
+    }
+  }, []);
+
+  // Oturum kontrolü + Supabase Auth durum dinleyicisi
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const session = await api.getCurrentSession();
+      if (mounted) {
+        await loadUserFromSession(session?.user || null);
+        setCheckingSession(false);
+      }
+    })();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      await loadUserFromSession(session?.user || null);
+    });
+
+    return () => {
+      mounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, [loadUserFromSession]);
+
+  // Kullanıcı oturum açtığında ilk veri yükleme
   useEffect(() => {
     if (!user) return;
     setLoadingPosts(true);
     Promise.all([refreshPosts(), refreshUsers(), refreshChats()]).finally(() => setLoadingPosts(false));
   }, [user, refreshPosts, refreshUsers, refreshChats]);
 
+  // Realtime abonelikleri: yeni kullanıcı, yeni gönderi, yeni beğeni, yeni mesaj
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel("meydan-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, () => {
+        refreshUsers();
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, () => {
+        refreshPosts();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "likes" }, () => {
+        refreshPosts();
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
+        refreshChats();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, refreshUsers, refreshPosts, refreshChats]);
+
   const toggleLike = async (postId) => {
-    const all = await getPosts();
-    const updated = all.map((p) => {
-      if (p.id !== postId) return p;
-      const likes = p.likes || [];
-      const has = likes.includes(user.email);
-      return { ...p, likes: has ? likes.filter((e) => e !== user.email) : [...likes, user.email] };
-    });
-    await savePosts(updated);
-    setPosts(updated);
+    const post = posts.find((p) => p.id === postId);
+    const alreadyLiked = (post?.likes || []).includes(user.id);
+    // İyimser güncelleme: arayüz anında değişsin, realtime olay geldiğinde zaten senkron kalacak
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.id !== postId) return p;
+        const likes = p.likes || [];
+        return { ...p, likes: alreadyLiked ? likes.filter((id) => id !== user.id) : [...likes, user.id] };
+      })
+    );
+    try {
+      await api.toggleLike(postId, user.id, alreadyLiked);
+    } catch (err) {
+      console.error("Beğeni işlemi başarısız", err);
+      refreshPosts();
+    }
   };
 
   const openChatWith = async (otherUser) => {
-    let all = await getChats();
-    let chat = all.find(
-      (c) => c.participants.includes(user.email) && c.participants.includes(otherUser.email)
-    );
-    if (!chat) {
-      chat = { id: Date.now(), participants: [user.email, otherUser.email], messages: [] };
-      all = [...all, chat];
-      await saveChats(all);
+    try {
+      const conversationId = await api.findOrCreateConversation(user.id, otherUser.id);
+      await refreshChats();
+      setOpenChatId(conversationId);
+      setActive("messages");
+    } catch (err) {
+      console.error("Sohbet açılamadı", err);
     }
-    setChats(all);
-    setOpenChatId(chat.id);
-    setActive("messages");
   };
 
   const handleLogout = async () => {
-    await clearSession();
+    await api.signOut();
     setUser(null);
     setActive("feed");
   };
@@ -864,33 +878,19 @@ export default function Meydan() {
   }
 
   if (!user) {
-    return <AuthScreen onLogin={setUser} />;
+    return <AuthScreen onLogin={() => {}} />;
   }
 
   return (
-    <div
-      className="flex min-h-screen"
-      style={{ background: COLORS.bg, color: COLORS.ivory, fontFamily: "system-ui, -apple-system, sans-serif" }}
-    >
+    <div className="flex min-h-screen" style={{ background: COLORS.bg, color: COLORS.ivory, fontFamily: "system-ui, -apple-system, sans-serif" }}>
       <Sidebar active={active} setActive={setActive} onLogout={handleLogout} user={user} />
       <div className="flex-1 pb-16 md:pb-0">
-        {active === "feed" && (
-          <Feed loading={loadingPosts} posts={posts} currentUser={user} onToggleLike={toggleLike} />
-        )}
+        {active === "feed" && <Feed loading={loadingPosts} posts={posts} currentUser={user} onToggleLike={toggleLike} />}
         {active === "new" && <CreatePost user={user} onCreated={refreshPosts} goTo={setActive} />}
-        {active === "discover" && (
-          <Discover posts={posts} users={users} currentUser={user} onOpenChat={openChatWith} />
-        )}
+        {active === "discover" && <Discover posts={posts} users={users} currentUser={user} onOpenChat={openChatWith} />}
         {active === "profile" && <Profile user={user} posts={posts} />}
         {active === "messages" && (
-          <Messages
-            user={user}
-            users={users}
-            chats={chats}
-            refreshChats={refreshChats}
-            openChatId={openChatId}
-            setOpenChatId={setOpenChatId}
-          />
+          <Messages user={user} chats={chats} refreshChats={refreshChats} openChatId={openChatId} setOpenChatId={setOpenChatId} />
         )}
       </div>
       <MobileNav active={active} setActive={setActive} />
