@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 
 /* ==========================================================================
    AUTH
-c   ========================================================================== */
+   ========================================================================== */
 
 export async function signUp({ email, password, username }) {
   const { data, error } = await supabase.auth.signUp({
@@ -61,6 +61,20 @@ export async function updateProfile(userId, updates) {
   return data;
 }
 
+export async function uploadAvatar(userId, file) {
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `${userId}/avatar-${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage.from("images").upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage.from("images").getPublicUrl(path);
+  return data.publicUrl;
+}
+
 /* ==========================================================================
    POSTS + LIKES
    ========================================================================== */
@@ -102,6 +116,9 @@ export async function fetchPosts() {
   const { data: likes, error: likesError } = await supabase.from("likes").select("post_id, user_id");
   if (likesError) throw likesError;
 
+  const { data: comments, error: commentsError } = await supabase.from("comments").select("post_id");
+  if (commentsError) throw commentsError;
+
   return (posts || []).map((p) => ({
     id: p.id,
     userId: p.user_id,
@@ -112,6 +129,7 @@ export async function fetchPosts() {
     caption: p.caption,
     time: new Date(p.created_at).toLocaleString("tr-TR"),
     likes: (likes || []).filter((l) => l.post_id === p.id).map((l) => l.user_id),
+    commentCount: (comments || []).filter((c) => c.post_id === p.id).length,
   }));
 }
 
@@ -129,6 +147,43 @@ export async function toggleLike(postId, userId, alreadyLiked) {
     // gelebilir — bu durumda sessizce yoksayıyoruz (zaten beğenilmiş demektir).
     if (error && error.code !== "23505") throw error;
   }
+}
+
+export async function deletePost(postId, userId) {
+  const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", userId);
+  if (error) throw error;
+}
+
+/* ==========================================================================
+   COMMENTS
+   ========================================================================== */
+
+export async function fetchComments(postId) {
+  const { data, error } = await supabase
+    .from("comments")
+    .select("id, post_id, user_id, text, created_at, profiles(username, avatar_url)")
+    .eq("post_id", postId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((c) => ({
+    id: c.id,
+    postId: c.post_id,
+    userId: c.user_id,
+    username: c.profiles?.username || "silinmiş kullanıcı",
+    avatarUrl: c.profiles?.avatar_url || null,
+    text: c.text,
+    time: new Date(c.created_at).toLocaleString("tr-TR"),
+  }));
+}
+
+export async function addComment(postId, userId, text) {
+  const { error } = await supabase.from("comments").insert({ post_id: postId, user_id: userId, text });
+  if (error) throw error;
+}
+
+export async function deleteComment(commentId, userId) {
+  const { error } = await supabase.from("comments").delete().eq("id", commentId).eq("user_id", userId);
+  if (error) throw error;
 }
 
 /* ==========================================================================
