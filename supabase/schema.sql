@@ -1,8 +1,12 @@
 -- ============================================================
 -- MEYDAN — Supabase şema, RLS policy'leri ve storage ayarları
+-- (GÜVENLİ SÜRÜM: tekrar tekrar çalıştırılabilir / idempotent)
 -- ============================================================
 -- Bu dosyanın TAMAMINI Supabase Dashboard > SQL Editor içinde
 -- tek seferde çalıştırın (New query > yapıştır > Run).
+-- Daha önce "policy already exists" gibi bir hatayla yarıda
+-- kesilmiş olsa bile bu sürümü baştan sona güvenle tekrar
+-- çalıştırabilirsiniz.
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -19,15 +23,18 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+drop policy if exists "Profiller herkes tarafından görülebilir" on public.profiles;
 create policy "Profiller herkes tarafından görülebilir"
   on public.profiles for select
   using (true);
 
+drop policy if exists "Kullanıcı sadece kendi profilini güncelleyebilir" on public.profiles;
 create policy "Kullanıcı sadece kendi profilini güncelleyebilir"
   on public.profiles for update
   using (auth.uid() = id)
   with check (auth.uid() = id);
 
+drop policy if exists "Kullanıcı kendi profilini oluşturabilir" on public.profiles;
 create policy "Kullanıcı kendi profilini oluşturabilir"
   on public.profiles for insert
   with check (auth.uid() = id);
@@ -71,14 +78,17 @@ create index if not exists posts_user_id_idx on public.posts (user_id);
 
 alter table public.posts enable row level security;
 
+drop policy if exists "Gönderiler herkes tarafından görülebilir" on public.posts;
 create policy "Gönderiler herkes tarafından görülebilir"
   on public.posts for select
   using (true);
 
+drop policy if exists "Kullanıcı kendi gönderisini oluşturabilir" on public.posts;
 create policy "Kullanıcı kendi gönderisini oluşturabilir"
   on public.posts for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Kullanıcı sadece kendi gönderisini silebilir" on public.posts;
 create policy "Kullanıcı sadece kendi gönderisini silebilir"
   on public.posts for delete
   using (auth.uid() = user_id);
@@ -98,14 +108,17 @@ create index if not exists likes_post_id_idx on public.likes (post_id);
 
 alter table public.likes enable row level security;
 
+drop policy if exists "Beğeniler herkes tarafından görülebilir" on public.likes;
 create policy "Beğeniler herkes tarafından görülebilir"
   on public.likes for select
   using (true);
 
+drop policy if exists "Kullanıcı kendi beğenisini ekleyebilir" on public.likes;
 create policy "Kullanıcı kendi beğenisini ekleyebilir"
   on public.likes for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Kullanıcı kendi beğenisini kaldırabilir" on public.likes;
 create policy "Kullanıcı kendi beğenisini kaldırabilir"
   on public.likes for delete
   using (auth.uid() = user_id);
@@ -125,14 +138,17 @@ create index if not exists comments_post_id_idx on public.comments (post_id, cre
 
 alter table public.comments enable row level security;
 
+drop policy if exists "Yorumlar herkes tarafından görülebilir" on public.comments;
 create policy "Yorumlar herkes tarafından görülebilir"
   on public.comments for select
   using (true);
 
+drop policy if exists "Kullanıcı kendi yorumunu ekleyebilir" on public.comments;
 create policy "Kullanıcı kendi yorumunu ekleyebilir"
   on public.comments for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Kullanıcı sadece kendi yorumunu silebilir" on public.comments;
 create policy "Kullanıcı sadece kendi yorumunu silebilir"
   on public.comments for delete
   using (auth.uid() = user_id);
@@ -155,6 +171,7 @@ create table if not exists public.conversation_members (
 
 alter table public.conversation_members enable row level security;
 
+drop policy if exists "Kullanıcı üyesi olduğu konuşmaları görebilir" on public.conversations;
 create policy "Kullanıcı üyesi olduğu konuşmaları görebilir"
   on public.conversations for select
   using (
@@ -165,10 +182,12 @@ create policy "Kullanıcı üyesi olduğu konuşmaları görebilir"
     )
   );
 
+drop policy if exists "Giriş yapan kullanıcı yeni konuşma oluşturabilir" on public.conversations;
 create policy "Giriş yapan kullanıcı yeni konuşma oluşturabilir"
   on public.conversations for insert
   with check (auth.uid() is not null);
 
+drop policy if exists "Üyeler kendi konuşmalarındaki üyelik listesini görebilir" on public.conversation_members;
 create policy "Üyeler kendi konuşmalarındaki üyelik listesini görebilir"
   on public.conversation_members for select
   using (
@@ -184,6 +203,7 @@ create policy "Üyeler kendi konuşmalarındaki üyelik listesini görebilir"
 -- Bu yüzden policy'i "sadece kendini ekleyebilir" ile sınırlamak yerine,
 -- giriş yapmış herhangi bir kullanıcının üyelik satırı eklemesine izin
 -- veriyoruz. Okuma (select) tarafı zaten yukarıda üyelikle kısıtlı.
+drop policy if exists "Giriş yapan kullanıcı konuşmaya üye ekleyebilir" on public.conversation_members;
 create policy "Giriş yapan kullanıcı konuşmaya üye ekleyebilir"
   on public.conversation_members for insert
   with check (auth.uid() is not null);
@@ -203,6 +223,7 @@ create index if not exists messages_conversation_id_idx on public.messages (conv
 
 alter table public.messages enable row level security;
 
+drop policy if exists "Üyeler kendi konuşmalarındaki mesajları görebilir" on public.messages;
 create policy "Üyeler kendi konuşmalarındaki mesajları görebilir"
   on public.messages for select
   using (
@@ -213,6 +234,7 @@ create policy "Üyeler kendi konuşmalarındaki mesajları görebilir"
     )
   );
 
+drop policy if exists "Kullanıcı sadece kendi mesajını, üyesi olduğu bir konuşmaya gönderebilir" on public.messages;
 create policy "Kullanıcı sadece kendi mesajını, üyesi olduğu bir konuşmaya gönderebilir"
   on public.messages for insert
   with check (
@@ -231,14 +253,17 @@ insert into storage.buckets (id, name, public)
 values ('images', 'images', true)
 on conflict (id) do nothing;
 
+drop policy if exists "Herkes images bucket'ındaki dosyaları görüntüleyebilir" on storage.objects;
 create policy "Herkes images bucket'ındaki dosyaları görüntüleyebilir"
   on storage.objects for select
   using (bucket_id = 'images');
 
+drop policy if exists "Giriş yapan kullanıcılar images bucket'ına dosya yükleyebilir" on storage.objects;
 create policy "Giriş yapan kullanıcılar images bucket'ına dosya yükleyebilir"
   on storage.objects for insert
   with check (bucket_id = 'images' and auth.uid() is not null);
 
+drop policy if exists "Kullanıcı kendi yüklediği dosyayı silebilir" on storage.objects;
 create policy "Kullanıcı kendi yüklediği dosyayı silebilir"
   on storage.objects for delete
   using (bucket_id = 'images' and owner = auth.uid());
@@ -246,11 +271,24 @@ create policy "Kullanıcı kendi yüklediği dosyayı silebilir"
 -- ------------------------------------------------------------
 -- 7) REALTIME — ilgili tabloları realtime publication'a ekle
 -- ------------------------------------------------------------
-alter publication supabase_realtime add table public.profiles;
-alter publication supabase_realtime add table public.posts;
-alter publication supabase_realtime add table public.likes;
-alter publication supabase_realtime add table public.comments;
-alter publication supabase_realtime add table public.messages;
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'profiles') then
+    alter publication supabase_realtime add table public.profiles;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'posts') then
+    alter publication supabase_realtime add table public.posts;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'likes') then
+    alter publication supabase_realtime add table public.likes;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'comments') then
+    alter publication supabase_realtime add table public.comments;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages') then
+    alter publication supabase_realtime add table public.messages;
+  end if;
+end $$;
 
 -- ------------------------------------------------------------
 -- 8) conversation_members / conversations / messages için
@@ -327,14 +365,17 @@ create index if not exists follows_following_id_idx on public.follows (following
 
 alter table public.follows enable row level security;
 
+drop policy if exists "Takip ilişkileri herkes tarafından görülebilir" on public.follows;
 create policy "Takip ilişkileri herkes tarafından görülebilir"
   on public.follows for select
   using (true);
 
+drop policy if exists "Kullanıcı sadece kendi adına takip edebilir" on public.follows;
 create policy "Kullanıcı sadece kendi adına takip edebilir"
   on public.follows for insert
   with check (auth.uid() = follower_id);
 
+drop policy if exists "Kullanıcı sadece kendi takibini bırakabilir" on public.follows;
 create policy "Kullanıcı sadece kendi takibini bırakabilir"
   on public.follows for delete
   using (auth.uid() = follower_id);
