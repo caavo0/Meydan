@@ -117,7 +117,9 @@ export async function createPost({ userId, imageUrl, caption, mediaType = "image
 export async function fetchPosts() {
   const { data: posts, error } = await supabase
     .from("posts")
-    .select("id, user_id, image_url, caption, media_type, created_at, profiles(username, avatar_url)")
+    .select(
+      "id, user_id, image_url, caption, media_type, comments_disabled, edited_at, created_at, profiles(username, avatar_url)"
+    )
     .order("created_at", { ascending: false });
   if (error) throw error;
 
@@ -136,10 +138,33 @@ export async function fetchPosts() {
     image: p.image_url,
     mediaType: p.media_type || "image",
     caption: p.caption,
+    commentsDisabled: !!p.comments_disabled,
+    edited: !!p.edited_at,
     time: new Date(p.created_at).toLocaleString("tr-TR"),
     likes: (likes || []).filter((l) => l.post_id === p.id).map((l) => l.user_id),
     commentCount: (comments || []).filter((c) => c.post_id === p.id).length,
   }));
+}
+
+export async function updatePostCaption(postId, userId, caption) {
+  const { data, error } = await supabase
+    .from("posts")
+    .update({ caption })
+    .eq("id", postId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function toggleCommentsForPost(postId, userId, disabled) {
+  const { error } = await supabase
+    .from("posts")
+    .update({ comments_disabled: disabled })
+    .eq("id", postId)
+    .eq("user_id", userId);
+  if (error) throw error;
 }
 
 export async function toggleLike(postId, userId, alreadyLiked) {
@@ -313,5 +338,163 @@ export async function unfollowUser(followerId, followingId) {
     .delete()
     .eq("follower_id", followerId)
     .eq("following_id", followingId);
+  if (error) throw error;
+}
+
+/* ==========================================================================
+   SABİTLENEN GÖNDERİ (pinned post)
+   ========================================================================== */
+
+export async function pinPost(userId, postId) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ pinned_post_id: postId })
+    .eq("id", userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function unpinPost(userId) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ pinned_post_id: null })
+    .eq("id", userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/* ==========================================================================
+   KAYDEDİLEN GÖNDERİLER (sadece sahibi görebilir)
+   ========================================================================== */
+
+export async function fetchSavedPostIds(userId) {
+  const { data, error } = await supabase.from("saved_posts").select("post_id").eq("user_id", userId);
+  if (error) throw error;
+  return (data || []).map((r) => r.post_id);
+}
+
+export async function savePost(userId, postId) {
+  const { error } = await supabase.from("saved_posts").insert({ user_id: userId, post_id: postId });
+  if (error && error.code !== "23505") throw error;
+}
+
+export async function unsavePost(userId, postId) {
+  const { error } = await supabase
+    .from("saved_posts")
+    .delete()
+    .eq("user_id", userId)
+    .eq("post_id", postId);
+  if (error) throw error;
+}
+
+/* ==========================================================================
+   AYARLAR — hesap, gizlilik, kapak fotoğrafı
+   ========================================================================== */
+
+export async function uploadCoverPhoto(userId, file) {
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `${userId}/cover-${Date.now()}.${ext}`;
+  const { error: uploadError } = await supabase.storage.from("images").upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
+  const { data } = supabase.storage.from("images").getPublicUrl(path);
+  const { data: updated, error } = await supabase
+    .from("profiles")
+    .update({ cover_url: data.publicUrl })
+    .eq("id", userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return updated;
+}
+
+export async function updateEmail(newEmail) {
+  const { error } = await supabase.auth.updateUser({ email: newEmail });
+  if (error) throw error;
+}
+
+export async function updatePassword(newPassword) {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
+export async function updatePhone(userId, phone) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ phone })
+    .eq("id", userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function reauthenticate(email, password) {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+}
+
+export async function linkGoogleAccount() {
+  const { data, error } = await supabase.auth.linkIdentity({
+    provider: "google",
+    options: { redirectTo: window.location.origin },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function signInWithGoogle() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.origin },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteOwnAccount() {
+  const { error } = await supabase.rpc("delete_own_account");
+  if (error) throw error;
+  await supabase.auth.signOut();
+}
+
+/* ==========================================================================
+   ENGELLENEN KULLANICILAR
+   ========================================================================== */
+
+export async function fetchBlockedUsers(userId) {
+  const { data, error } = await supabase
+    .from("blocked_users")
+    .select("blocked_id, created_at, profiles!blocked_users_blocked_id_fkey(id, username, avatar_url)")
+    .eq("blocker_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((r) => ({
+    id: r.profiles?.id || r.blocked_id,
+    username: r.profiles?.username || "silinmiş kullanıcı",
+    avatar_url: r.profiles?.avatar_url || null,
+  }));
+}
+
+export async function blockUser(blockerId, blockedId) {
+  const { error } = await supabase.from("blocked_users").insert({ blocker_id: blockerId, blocked_id: blockedId });
+  if (error && error.code !== "23505") throw error;
+  // engellenince karşılıklı takip ilişkisini de temizle
+  await supabase.from("follows").delete().eq("follower_id", blockerId).eq("following_id", blockedId);
+  await supabase.from("follows").delete().eq("follower_id", blockedId).eq("following_id", blockerId);
+}
+
+export async function unblockUser(blockerId, blockedId) {
+  const { error } = await supabase
+    .from("blocked_users")
+    .delete()
+    .eq("blocker_id", blockerId)
+    .eq("blocked_id", blockedId);
   if (error) throw error;
 }
