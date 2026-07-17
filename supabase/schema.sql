@@ -295,7 +295,65 @@ create policy "Kullanıcı sadece kendi mesajını, üyesi olduğu bir konuşmay
     and public.is_conversation_member(conversation_id, auth.uid())
   );
 
+-- ------------------------------------------------------------
+-- 9) POSTS — video gönderileri için media_type kolonu
+-- ------------------------------------------------------------
+alter table public.posts
+  add column if not exists media_type text not null default 'image';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'posts_media_type_check'
+  ) then
+    alter table public.posts
+      add constraint posts_media_type_check check (media_type in ('image', 'video'));
+  end if;
+end $$;
+
+-- ------------------------------------------------------------
+-- 10) FOLLOWS — takip sistemi
+-- ------------------------------------------------------------
+create table if not exists public.follows (
+  follower_id uuid not null references public.profiles (id) on delete cascade,
+  following_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (follower_id, following_id),
+  constraint follows_no_self_follow check (follower_id <> following_id)
+);
+
+create index if not exists follows_follower_id_idx on public.follows (follower_id);
+create index if not exists follows_following_id_idx on public.follows (following_id);
+
+alter table public.follows enable row level security;
+
+create policy "Takip ilişkileri herkes tarafından görülebilir"
+  on public.follows for select
+  using (true);
+
+create policy "Kullanıcı sadece kendi adına takip edebilir"
+  on public.follows for insert
+  with check (auth.uid() = follower_id);
+
+create policy "Kullanıcı sadece kendi takibini bırakabilir"
+  on public.follows for delete
+  using (auth.uid() = follower_id);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'follows'
+  ) then
+    alter publication supabase_realtime add table public.follows;
+  end if;
+end $$;
+
 -- ============================================================
 -- Bitti. Sıradaki adım için README.md dosyasındaki kurulum
 -- talimatlarını takip edin (Storage bucket ve Auth ayarları dahil).
+-- Mevcut bir projeyi güncelliyorsanız supabase/migrations/002_follows_and_video_posts.sql
+-- dosyasını çalıştırmanız yeterlidir.
 -- ============================================================
