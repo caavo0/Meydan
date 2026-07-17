@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Heart,
   MessageCircle,
@@ -15,6 +15,15 @@ import {
   Settings,
   Users,
   Loader2,
+  UserPlus,
+  UserCheck,
+  X,
+  Camera,
+  RotateCcw,
+  Image as ImageIcon,
+  Play,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import * as api from "./lib/api";
@@ -97,6 +106,72 @@ function Avatar({ name, size = 32, avatarUrl = null }) {
 
 function Spinner() {
   return <Loader2 size={22} className="animate-spin" style={{ color: COLORS.bronze }} />;
+}
+
+/* ------------------------------- skeletons -------------------------------- */
+
+function PostSkeleton() {
+  return (
+    <div className="rounded-lg mb-6 overflow-hidden animate-fade-slide-soft" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="skeleton rounded-full flex-shrink-0" style={{ width: 32, height: 32 }} />
+        <div className="skeleton rounded" style={{ width: 96, height: 12 }} />
+      </div>
+      <div className="skeleton w-full aspect-square" />
+      <div className="px-4 pt-3 pb-4 flex flex-col gap-2">
+        <div className="flex items-center gap-4">
+          <div className="skeleton rounded-full" style={{ width: 22, height: 22 }} />
+          <div className="skeleton rounded-full" style={{ width: 22, height: 22 }} />
+          <div className="skeleton rounded-full" style={{ width: 22, height: 22 }} />
+        </div>
+        <div className="skeleton rounded" style={{ width: "40%", height: 10 }} />
+        <div className="skeleton rounded" style={{ width: "70%", height: 10 }} />
+      </div>
+    </div>
+  );
+}
+
+function FeedSkeleton() {
+  return (
+    <div>
+      <PostSkeleton />
+      <PostSkeleton />
+    </div>
+  );
+}
+
+function GridSkeleton({ count = 9 }) {
+  return (
+    <div className="grid grid-cols-3 gap-1">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="skeleton aspect-square" style={{ animationDelay: `${i * 0.04}s` }} />
+      ))}
+    </div>
+  );
+}
+
+function ProfileHeaderSkeleton() {
+  return (
+    <div className="flex flex-col items-center gap-3 mb-6 animate-fade-slide-soft">
+      <div className="skeleton rounded-full" style={{ width: 96, height: 96 }} />
+      <div className="skeleton rounded" style={{ width: 140, height: 16 }} />
+      <div className="flex gap-8">
+        <div className="skeleton rounded" style={{ width: 48, height: 34 }} />
+        <div className="skeleton rounded" style={{ width: 48, height: 34 }} />
+        <div className="skeleton rounded" style={{ width: 48, height: 34 }} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------- page transition ------------------------------ */
+
+function PageTransition({ children, transitionKey }) {
+  return (
+    <div key={transitionKey} className="animate-fade-slide">
+      {children}
+    </div>
+  );
 }
 
 /* -------------------------------- Auth ------------------------------------ */
@@ -207,7 +282,7 @@ function AuthScreen({ onLogin }) {
             <button
               onClick={handleSubmit}
               disabled={!email.trim() || !password.trim() || busy}
-              className="w-full mt-2 text-sm font-semibold py-2.5 rounded-md transition-opacity disabled:opacity-40 flex items-center justify-center gap-2"
+              className="w-full mt-2 text-sm font-semibold py-2.5 rounded-md transition-opacity disabled:opacity-40 flex items-center justify-center gap-2 press-scale"
               style={{ background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }}
             >
               {busy && <Spinner />}
@@ -270,14 +345,14 @@ function Sidebar({ active, setActive, onLogout, user }) {
               <button
                 key={key}
                 onClick={() => setActive(key)}
-                className="flex items-center gap-4 px-3 py-2.5 rounded-lg text-sm transition-colors"
+                className="flex items-center gap-4 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 press-scale"
                 style={{
                   color: isActive ? COLORS.ivory : COLORS.muted,
                   background: isActive ? COLORS.surfaceAlt : "transparent",
                   fontWeight: isActive ? 700 : 500,
                 }}
               >
-                <Icon size={20} strokeWidth={isActive ? 2.5 : 2} color={isActive ? COLORS.bronzeSoft : COLORS.muted} />
+                <Icon size={20} strokeWidth={isActive ? 2.5 : 2} color={isActive ? COLORS.bronzeSoft : COLORS.muted} className="transition-transform duration-200" style={isActive ? { transform: "scale(1.08)" } : undefined} />
                 {label}
               </button>
             );
@@ -287,7 +362,7 @@ function Sidebar({ active, setActive, onLogout, user }) {
       <div>
         <button
           onClick={() => setActive("profile")}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1 w-full"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1 w-full press-scale"
           style={{ background: "transparent" }}
         >
           <Avatar name={user.username} size={28} avatarUrl={user.avatar_url} />
@@ -295,7 +370,7 @@ function Sidebar({ active, setActive, onLogout, user }) {
             {user.username}
           </span>
         </button>
-        <button onClick={onLogout} className="text-sm px-3 py-2 text-left w-full" style={{ color: COLORS.muted }}>
+        <button onClick={onLogout} className="text-sm px-3 py-2 text-left w-full press-scale" style={{ color: COLORS.muted }}>
           Çıkış yap
         </button>
       </div>
@@ -313,12 +388,18 @@ function MobileNav({ active, setActive }) {
   ];
   return (
     <div
-      className="md:hidden fixed bottom-0 left-0 right-0 flex justify-around py-3 z-10"
-      style={{ background: COLORS.surface, borderTop: `1px solid ${COLORS.border}` }}
+      className="md:hidden fixed bottom-0 left-0 right-0 flex justify-around py-3 z-10 glass-strong"
+      style={{ borderTop: `1px solid ${COLORS.border}` }}
     >
       {items.map(({ key, icon: Icon }) => (
-        <button key={key} onClick={() => setActive(key)}>
-          <Icon size={22} strokeWidth={active === key ? 2.5 : 2} color={active === key ? COLORS.bronzeSoft : COLORS.muted} />
+        <button key={key} onClick={() => setActive(key)} className="press-scale p-1.5">
+          <Icon
+            size={22}
+            strokeWidth={active === key ? 2.5 : 2}
+            color={active === key ? COLORS.bronzeSoft : COLORS.muted}
+            className="transition-transform duration-200"
+            style={active === key ? { transform: "scale(1.15)" } : undefined}
+          />
         </button>
       ))}
     </div>
@@ -356,7 +437,10 @@ function PostMenu({ isOwn, onClose, onDelete }) {
 function Post({ post, currentUser, onToggleLike, onOpenProfile, onOpenComments, onDelete, commentCount }) {
   const liked = (post.likes || []).includes(currentUser.id);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [justLiked, setJustLiked] = useState(false);
+  const [muted, setMuted] = useState(true);
   const isOwn = post.userId === currentUser.id;
+  const isVideo = post.mediaType === "video";
 
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}${window.location.pathname}#post-${post.id}`;
@@ -377,30 +461,68 @@ function Post({ post, currentUser, onToggleLike, onOpenProfile, onOpenComments, 
     }
   };
 
+  const handleLikeClick = () => {
+    if (!liked) {
+      setJustLiked(true);
+      setTimeout(() => setJustLiked(false), 320);
+    }
+    onToggleLike(post.id);
+  };
+
   return (
     <div className="rounded-lg mb-6 overflow-hidden relative" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
       <div className="flex items-center justify-between px-4 py-3">
-        <button className="flex items-center gap-3" onClick={() => onOpenProfile(post.userId)}>
+        <button className="flex items-center gap-3 press-scale" onClick={() => onOpenProfile(post.userId)}>
           <Avatar name={post.username} size={32} avatarUrl={post.avatarUrl} />
           <span className="text-sm font-semibold" style={{ color: COLORS.ivory }}>
             {post.username}
           </span>
         </button>
-        <button onClick={() => setMenuOpen((v) => !v)}>
+        <button onClick={() => setMenuOpen((v) => !v)} className="press-scale">
           <MoreHorizontal size={20} color={COLORS.muted} />
         </button>
         {menuOpen && <PostMenu isOwn={isOwn} onClose={() => setMenuOpen(false)} onDelete={() => onDelete(post.id)} />}
       </div>
-      {post.image && <img src={post.image} alt="gönderi" className="w-full aspect-square object-cover" />}
+      {post.image && (
+        <div className="relative w-full aspect-square" style={{ background: "#000" }} onDoubleClick={handleLikeClick}>
+          {isVideo ? (
+            <>
+              <video
+                src={post.image}
+                className="w-full h-full object-cover"
+                autoPlay
+                loop
+                muted={muted}
+                playsInline
+                preload="metadata"
+              />
+              <button
+                onClick={() => setMuted((m) => !m)}
+                className="absolute bottom-3 right-3 p-2 rounded-full press-scale"
+                style={{ background: "rgba(15,27,45,0.6)" }}
+              >
+                {muted ? <VolumeX size={15} color={COLORS.ivory} /> : <Volume2 size={15} color={COLORS.ivory} />}
+              </button>
+            </>
+          ) : (
+            <img src={post.image} alt="gönderi" className="w-full h-full object-cover" />
+          )}
+          {justLiked && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <Heart size={92} color="#E07A5F" fill="#E07A5F" className="animate-pop-in drop-shadow-lg" />
+            </div>
+          )}
+        </div>
+      )}
       <div className="px-4 pt-3 pb-4">
         <div className="flex items-center gap-4 mb-2">
-          <button onClick={() => onToggleLike(post.id)}>
-            <Heart size={22} color={liked ? "#E07A5F" : COLORS.ivory} fill={liked ? "#E07A5F" : "none"} />
+          <button onClick={handleLikeClick} className="press-scale">
+            <Heart size={22} color={liked ? "#E07A5F" : COLORS.ivory} fill={liked ? "#E07A5F" : "none"} className="transition-transform" />
           </button>
-          <button onClick={() => onOpenComments(post)}>
+          <button onClick={() => onOpenComments(post)} className="press-scale">
             <MessageCircle size={22} color={COLORS.ivory} />
           </button>
-          <button onClick={handleShare}>
+          <button onClick={handleShare} className="press-scale">
             <Send size={20} color={COLORS.ivory} />
           </button>
         </div>
@@ -446,23 +568,22 @@ function Feed({ loading, posts, currentUser, onToggleLike, onOpenProfile, onOpen
   return (
     <div className="max-w-lg mx-auto py-6 px-4">
       {loading ? (
-        <div className="flex justify-center py-20">
-          <Spinner />
-        </div>
+        <FeedSkeleton />
       ) : posts.length === 0 ? (
         <EmptyState icon={ImagePlus} title="Akışında henüz gönderi yok" subtitle={'"Oluştur" bölümünden ilk paylaşımını yap'} />
       ) : (
-        posts.map((post) => (
-          <Post
-            key={post.id}
-            post={post}
-            currentUser={currentUser}
-            onToggleLike={onToggleLike}
-            onOpenProfile={onOpenProfile}
-            onOpenComments={onOpenComments}
-            onDelete={onDelete}
-            commentCount={post.commentCount || 0}
-          />
+        posts.map((post, i) => (
+          <div key={post.id} className="animate-fade-slide-soft" style={{ animationDelay: `${Math.min(i, 6) * 0.04}s` }}>
+            <Post
+              post={post}
+              currentUser={currentUser}
+              onToggleLike={onToggleLike}
+              onOpenProfile={onOpenProfile}
+              onOpenComments={onOpenComments}
+              onDelete={onDelete}
+              commentCount={post.commentCount || 0}
+            />
+          </div>
         ))
       )}
     </div>
@@ -506,17 +627,17 @@ function CommentsModal({ post, currentUser, onClose, onCommentAdded }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{ background: "rgba(15,27,45,0.7)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center animate-scrim" style={{ background: "rgba(15,27,45,0.7)" }} onClick={onClose}>
       <div
-        className="w-full md:max-w-md max-h-[80vh] flex flex-col rounded-t-2xl md:rounded-lg overflow-hidden"
-        style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}
+        className="w-full md:max-w-md max-h-[80vh] flex flex-col rounded-t-2xl md:rounded-lg overflow-hidden animate-modal-rise glass-strong"
+        style={{ border: `1px solid ${COLORS.border}` }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
           <span className="text-sm font-semibold" style={{ color: COLORS.ivory }}>
             Yorumlar
           </span>
-          <button onClick={onClose} className="text-sm" style={{ color: COLORS.muted }}>
+          <button onClick={onClose} className="text-sm press-scale" style={{ color: COLORS.muted }}>
             Kapat
           </button>
         </div>
@@ -566,27 +687,274 @@ function CommentsModal({ post, currentUser, onClose, onCommentAdded }) {
 
 /* ------------------------------ Create post -------------------------------- */
 
+const MAX_RECORD_SECONDS = 60;
+const HOLD_THRESHOLD_MS = 320;
+
+function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const holdTimerRef = useRef(null);
+  const tickRef = useRef(null);
+  const fileInput = useRef(null);
+
+  const [facingMode, setFacingMode] = useState("environment");
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReady(false);
+    setError("");
+    stopStream();
+
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode },
+          audio: true,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setReady(true);
+      } catch (err) {
+        console.error("Kamera açılamadı", err);
+        setError("Kameraya erişilemedi. Lütfen tarayıcı izinlerini kontrol et ya da galeriden seç.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      stopStream();
+    };
+  }, [facingMode, stopStream]);
+
+  useEffect(() => () => clearInterval(tickRef.current), []);
+
+  const takePhoto = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const size = Math.min(video.videoWidth, video.videoHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const sx = (video.videoWidth - size) / 2;
+    const sy = (video.videoHeight - size) / 2;
+    ctx.translate(size, 0);
+    ctx.scale(facingMode === "user" ? -1 : 1, 1);
+    ctx.drawImage(video, sx, sy, size, size, facingMode === "user" ? 0 : 0, 0, size, size);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        const file = new File([blob], `meydan-${Date.now()}.jpg`, { type: "image/jpeg" });
+        onCapturePhoto(file);
+      },
+      "image/jpeg",
+      0.92
+    );
+  }, [facingMode, onCapturePhoto]);
+
+  const startRecording = useCallback(() => {
+    if (!streamRef.current) return;
+    chunksRef.current = [];
+    let recorder;
+    try {
+      recorder = new MediaRecorder(streamRef.current, { mimeType: "video/webm;codecs=vp9,opus" });
+    } catch {
+      try {
+        recorder = new MediaRecorder(streamRef.current);
+      } catch (err) {
+        console.error("MediaRecorder desteklenmiyor", err);
+        return;
+      }
+    }
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+    };
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "video/webm" });
+      const ext = (recorder.mimeType || "video/webm").includes("mp4") ? "mp4" : "webm";
+      const file = new File([blob], `meydan-${Date.now()}.${ext}`, { type: blob.type });
+      onCaptureVideo(file);
+    };
+    recorderRef.current = recorder;
+    recorder.start();
+    setIsRecording(true);
+    setSeconds(0);
+    tickRef.current = setInterval(() => {
+      setSeconds((s) => {
+        if (s + 1 >= MAX_RECORD_SECONDS) {
+          stopRecording();
+          return s;
+        }
+        return s + 1;
+      });
+    }, 1000);
+  }, [onCaptureVideo]);
+
+  const stopRecording = useCallback(() => {
+    clearInterval(tickRef.current);
+    setIsRecording(false);
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+  }, []);
+
+  const handlePointerDown = () => {
+    if (!ready) return;
+    holdTimerRef.current = setTimeout(() => {
+      holdTimerRef.current = "recording";
+      startRecording();
+    }, HOLD_THRESHOLD_MS);
+  };
+
+  const handlePointerUp = () => {
+    if (holdTimerRef.current === "recording") {
+      stopRecording();
+    } else if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      takePhoto();
+    }
+    holdTimerRef.current = null;
+  };
+
+  const handleGalleryFile = (e) => {
+    const f = e.target.files?.[0];
+    if (f) onPickFromGallery(f);
+  };
+
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col animate-scrim" style={{ background: "#000" }}>
+      <div className="flex items-center justify-between px-4 pt-4 pb-2 relative z-10">
+        <button onClick={onClose} className="p-2 rounded-full press-scale glass">
+          <X size={20} color="#fff" />
+        </button>
+        {isRecording && (
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full" style={{ background: "rgba(224,122,95,0.9)" }}>
+            <span className="w-2 h-2 rounded-full bg-white" />
+            <span className="text-xs font-semibold text-white tabular-nums">
+              {mm}:{ss}
+            </span>
+          </div>
+        )}
+        <button
+          onClick={() => setFacingMode((m) => (m === "user" ? "environment" : "user"))}
+          className="p-2 rounded-full press-scale glass"
+          disabled={isRecording}
+        >
+          <RotateCcw size={20} color="#fff" />
+        </button>
+      </div>
+
+      <div className="flex-1 relative flex items-center justify-center overflow-hidden">
+        {error ? (
+          <div className="flex flex-col items-center gap-3 px-8 text-center">
+            <Camera size={40} strokeWidth={1.5} color={COLORS.muted} />
+            <p className="text-sm" style={{ color: COLORS.ivory }}>
+              {error}
+            </p>
+          </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+              style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
+            />
+            {!ready && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Spinner />
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="relative z-10 flex items-center justify-between px-8 pb-10 pt-5">
+        <button onClick={() => fileInput.current?.click()} className="p-3 rounded-xl press-scale glass flex flex-col items-center gap-1">
+          <ImageIcon size={22} color="#fff" />
+        </button>
+        <input ref={fileInput} type="file" accept="image/*,video/*" onChange={handleGalleryFile} className="hidden" />
+
+        <button
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={() => {
+            if (holdTimerRef.current === "recording") stopRecording();
+          }}
+          disabled={!ready}
+          className="rounded-full flex items-center justify-center press-scale disabled:opacity-40"
+          style={{
+            width: 76,
+            height: 76,
+            background: "transparent",
+            border: `4px solid #fff`,
+            padding: 5,
+          }}
+        >
+          <span
+            className={`rounded-full transition-all duration-200 ${isRecording ? "animate-record-pulse" : ""}`}
+            style={{
+              width: isRecording ? 30 : "100%",
+              height: isRecording ? 30 : "100%",
+              borderRadius: isRecording ? 8 : 999,
+              background: "#E07A5F",
+            }}
+          />
+        </button>
+
+        <div style={{ width: 48 }} />
+      </div>
+      <p className="text-center text-[11px] pb-4 -mt-6" style={{ color: "rgba(255,255,255,0.55)" }}>
+        {isRecording ? "Bırakınca kaydı bitir" : "Fotoğraf için dokun, video için basılı tut"}
+      </p>
+    </div>
+  );
+}
+
 function CreatePost({ user, onCreated, goTo }) {
+  const [step, setStep] = useState("camera"); // camera | preview
   const [preview, setPreview] = useState(null);
   const [file, setFile] = useState(null);
+  const [mediaType, setMediaType] = useState("image");
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [dragOver, setDragOver] = useState(false);
-  const fileInput = useRef(null);
+  const galleryInput = useRef(null);
 
-  const pickFile = (selected) => {
-    if (!selected) return;
+  const setCaptured = (selected, type) => {
     setFile(selected);
+    setMediaType(type);
     setPreview(URL.createObjectURL(selected));
+    setStep("preview");
   };
 
-  const handleFile = (e) => pickFile(e.target.files?.[0]);
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    pickFile(e.dataTransfer.files?.[0]);
+  const handleGalleryPick = (selected) => {
+    if (!selected) return;
+    const type = selected.type?.startsWith("video") ? "video" : "image";
+    setCaptured(selected, type);
   };
 
   const handleShare = async () => {
@@ -594,8 +962,8 @@ function CreatePost({ user, onCreated, goTo }) {
     setBusy(true);
     setError("");
     try {
-      const imageUrl = await api.uploadPostImage(user.id, file);
-      await api.createPost({ userId: user.id, imageUrl, caption });
+      const { url, mediaType: uploadedType } = await api.uploadPostMedia(user.id, file);
+      await api.createPost({ userId: user.id, imageUrl: url, caption, mediaType: uploadedType });
       setPreview(null);
       setFile(null);
       setCaption("");
@@ -607,103 +975,94 @@ function CreatePost({ user, onCreated, goTo }) {
     setBusy(false);
   };
 
+  const retake = () => {
+    setPreview(null);
+    setFile(null);
+    setCaption("");
+    setError("");
+    setStep("camera");
+  };
+
+  if (step === "camera") {
+    return (
+      <CameraView
+        onClose={() => goTo("feed")}
+        onCapturePhoto={(f) => setCaptured(f, "image")}
+        onCaptureVideo={(f) => setCaptured(f, "video")}
+        onPickFromGallery={handleGalleryPick}
+      />
+    );
+  }
+
   return (
-    <div className="max-w-lg mx-auto py-6 px-4">
+    <div className="max-w-lg mx-auto py-6 px-4 animate-fade-slide">
       <div className="flex items-center justify-between mb-4">
+        <button onClick={retake} className="flex items-center gap-1 text-sm press-scale" style={{ color: COLORS.muted }}>
+          <ArrowLeft size={16} /> Yeniden çek
+        </button>
         <h2 className="text-lg font-bold" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
-          Yeni gönderi oluştur
+          Paylaşıma hazırla
         </h2>
-        {preview && (
-          <button
-            onClick={handleShare}
-            disabled={busy}
-            className="text-sm font-semibold px-4 py-1.5 rounded-full disabled:opacity-40 flex items-center gap-2"
-            style={{ background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }}
-          >
-            {busy && <Spinner />}
-            Paylaş
-          </button>
-        )}
+        <button
+          onClick={handleShare}
+          disabled={busy}
+          className="text-sm font-semibold px-4 py-1.5 rounded-full disabled:opacity-40 flex items-center gap-2 press-scale"
+          style={{ background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }}
+        >
+          {busy && <Spinner />}
+          Paylaş
+        </button>
       </div>
 
-      <div className="rounded-lg overflow-hidden" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
-        {preview ? (
-          <div className="relative">
-            <img src={preview} alt="önizleme" className="w-full aspect-square object-cover" />
-            <button
-              onClick={() => {
-                setPreview(null);
-                setFile(null);
-              }}
-              className="absolute top-3 right-3 text-xs font-semibold px-3 py-1.5 rounded-full"
-              style={{ background: "rgba(15,27,45,0.75)", color: COLORS.ivory, border: `1px solid ${COLORS.border}` }}
-            >
-              Kaldır
-            </button>
-            <button
-              onClick={() => fileInput.current?.click()}
-              className="absolute bottom-3 right-3 text-xs font-semibold px-3 py-1.5 rounded-full"
-              style={{ background: "rgba(15,27,45,0.75)", color: COLORS.bronzeSoft, border: `1px solid ${COLORS.bronze}` }}
-            >
-              Fotoğrafı değiştir
-            </button>
-          </div>
-        ) : (
+      <div className="rounded-lg overflow-hidden animate-pop-in" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
+        <div className="relative w-full aspect-square" style={{ background: "#000" }}>
+          {mediaType === "video" ? (
+            <video src={preview} className="w-full h-full object-cover" controls loop playsInline />
+          ) : (
+            <img src={preview} alt="önizleme" className="w-full h-full object-cover" />
+          )}
           <button
-            onClick={() => fileInput.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            className="w-full aspect-square flex flex-col items-center justify-center gap-3 m-3 rounded-lg transition-colors"
-            style={{
-              width: "calc(100% - 24px)",
-              border: `2px dashed ${dragOver ? COLORS.bronzeSoft : COLORS.border}`,
-              color: COLORS.muted,
-              background: dragOver ? COLORS.surfaceAlt : "transparent",
-            }}
+            onClick={() => galleryInput.current?.click()}
+            className="absolute bottom-3 right-3 text-xs font-semibold px-3 py-1.5 rounded-full press-scale"
+            style={{ background: "rgba(15,27,45,0.75)", color: COLORS.bronzeSoft, border: `1px solid ${COLORS.bronze}` }}
           >
-            <ImagePlus size={40} strokeWidth={1.5} color={COLORS.bronzeSoft} />
-            <span className="text-sm font-medium" style={{ color: COLORS.ivory }}>
-              Fotoğraf sürükle bırak
-            </span>
-            <span className="text-xs">veya seçmek için dokun</span>
+            Değiştir
           </button>
-        )}
-        <input ref={fileInput} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+          <input
+            ref={galleryInput}
+            type="file"
+            accept="image/*,video/*"
+            onChange={(e) => handleGalleryPick(e.target.files?.[0])}
+            className="hidden"
+          />
+        </div>
 
         <div className="p-4 flex flex-col gap-3">
-          {preview && (
-            <div className="flex items-start gap-3">
-              <Avatar name={user.username} size={32} avatarUrl={user.avatar_url} />
-              <textarea
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                placeholder="Bir açıklama yaz..."
-                rows={3}
-                className="flex-1 text-sm px-3 py-2 rounded-md resize-none focus:outline-none"
-                style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, color: COLORS.ivory }}
-              />
-            </div>
-          )}
+          <div className="flex items-start gap-3">
+            <Avatar name={user.username} size={32} avatarUrl={user.avatar_url} />
+            <textarea
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              placeholder="Bir açıklama yaz..."
+              rows={3}
+              className="flex-1 text-sm px-3 py-2 rounded-md resize-none focus:outline-none"
+              style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, color: COLORS.ivory }}
+            />
+          </div>
           {error && (
             <p className="text-xs" style={{ color: "#E07A5F" }}>
               {error}
             </p>
           )}
-          {preview && (
-            <button
-              onClick={handleShare}
-              disabled={busy}
-              className="w-full text-sm font-semibold py-2.5 rounded-md disabled:opacity-40 flex items-center justify-center gap-2 md:hidden"
-              style={{ background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }}
-            >
-              {busy && <Spinner />}
-              Paylaş
-            </button>
-          )}
+          <button
+            onClick={handleShare}
+            disabled={busy}
+            className="w-full text-sm font-semibold py-2.5 rounded-md disabled:opacity-40 flex items-center justify-center gap-2 md:hidden press-scale"
+            style={{ background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }}
+          >
+            {busy && <Spinner />}
+            Paylaş
+          </button>
         </div>
       </div>
     </div>
@@ -712,7 +1071,7 @@ function CreatePost({ user, onCreated, goTo }) {
 
 /* --------------------------------- Discover -------------------------------- */
 
-function Discover({ posts, users, currentUser, onOpenChat, onOpenProfile }) {
+function Discover({ posts, users, currentUser, follows, onToggleFollow, onOpenChat, onOpenProfile }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState("posts"); // posts | users
 
@@ -748,7 +1107,7 @@ function Discover({ posts, users, currentUser, onOpenChat, onOpenProfile }) {
           <button
             key={key}
             onClick={() => setTab(key)}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded"
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded press-scale transition-colors"
             style={{ background: tab === key ? COLORS.surfaceAlt : "transparent", color: tab === key ? COLORS.bronzeSoft : COLORS.muted }}
           >
             <Icon size={13} /> {label}
@@ -765,10 +1124,20 @@ function Discover({ posts, users, currentUser, onOpenChat, onOpenProfile }) {
               <button
                 key={post.id}
                 onClick={() => onOpenProfile(post.userId)}
-                className="aspect-square relative group overflow-hidden text-left"
+                className="aspect-square relative group overflow-hidden text-left press-scale"
                 style={{ background: COLORS.surfaceAlt }}
               >
-                {post.image && <img src={post.image} alt="" className="w-full h-full object-cover" />}
+                {post.image &&
+                  (post.mediaType === "video" ? (
+                    <video src={post.image} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                  ) : (
+                    <img src={post.image} alt="" className="w-full h-full object-cover" />
+                  ))}
+                {post.mediaType === "video" && (
+                  <div className="absolute top-1.5 right-1.5">
+                    <Play size={14} color="#fff" fill="#fff" />
+                  </div>
+                )}
                 <div
                   className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px]"
                   style={{ background: "rgba(15,27,45,0.75)", color: COLORS.ivory }}
@@ -783,23 +1152,40 @@ function Discover({ posts, users, currentUser, onOpenChat, onOpenProfile }) {
         <EmptyState icon={Users} title="Kullanıcı bulunamadı" />
       ) : (
         <div className="flex flex-col gap-2">
-          {filteredUsers.map((u) => (
-            <div key={u.id} className="flex items-center justify-between px-4 py-3 rounded-lg" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
-              <button className="flex items-center gap-3" onClick={() => onOpenProfile(u.id)}>
-                <Avatar name={u.username} size={40} avatarUrl={u.avatar_url} />
-                <span className="text-sm font-medium" style={{ color: COLORS.ivory }}>
-                  {u.username}
-                </span>
-              </button>
-              <button
-                onClick={() => onOpenChat(u)}
-                className="text-xs font-semibold px-3 py-1.5 rounded-md"
-                style={{ border: `1px solid ${COLORS.bronze}`, color: COLORS.bronzeSoft }}
-              >
-                Mesaj gönder
-              </button>
-            </div>
-          ))}
+          {filteredUsers.map((u) => {
+            const isFollowing = follows.some((f) => f.follower_id === currentUser.id && f.following_id === u.id);
+            return (
+              <div key={u.id} className="flex items-center justify-between px-4 py-3 rounded-lg animate-fade-slide-soft" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
+                <button className="flex items-center gap-3 press-scale" onClick={() => onOpenProfile(u.id)}>
+                  <Avatar name={u.username} size={40} avatarUrl={u.avatar_url} />
+                  <span className="text-sm font-medium" style={{ color: COLORS.ivory }}>
+                    {u.username}
+                  </span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onToggleFollow(u.id, isFollowing)}
+                    className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md press-scale transition-colors"
+                    style={
+                      isFollowing
+                        ? { background: COLORS.surfaceAlt, color: COLORS.muted, border: `1px solid ${COLORS.border}` }
+                        : { background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }
+                    }
+                  >
+                    {isFollowing ? <UserCheck size={13} /> : <UserPlus size={13} />}
+                    {isFollowing ? "Takiptesin" : "Takip et"}
+                  </button>
+                  <button
+                    onClick={() => onOpenChat(u)}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-md press-scale"
+                    style={{ border: `1px solid ${COLORS.bronze}`, color: COLORS.bronzeSoft }}
+                  >
+                    Mesaj
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -847,17 +1233,17 @@ function EditProfileModal({ user, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{ background: "rgba(15,27,45,0.7)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center animate-scrim" style={{ background: "rgba(15,27,45,0.7)" }} onClick={onClose}>
       <div
-        className="w-full md:max-w-sm rounded-t-2xl md:rounded-lg overflow-hidden"
-        style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}
+        className="w-full md:max-w-sm rounded-t-2xl md:rounded-lg overflow-hidden animate-modal-rise glass-strong"
+        style={{ border: `1px solid ${COLORS.border}` }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
           <span className="text-sm font-semibold" style={{ color: COLORS.ivory }}>
             Profili düzenle
           </span>
-          <button onClick={onClose} className="text-sm" style={{ color: COLORS.muted }}>
+          <button onClick={onClose} className="text-sm press-scale" style={{ color: COLORS.muted }}>
             Kapat
           </button>
         </div>
@@ -914,71 +1300,234 @@ function EditProfileModal({ user, onClose, onSaved }) {
   );
 }
 
-function Profile({ profileUser, isOwnProfile, posts, onEditProfile, onMessage, onBack }) {
-  const mine = posts.filter((p) => p.userId === profileUser.id);
+/* ------------------------------- Follow list --------------------------------- */
+
+function FollowListModal({ title, userIds, users, currentUser, follows, onToggleFollow, onOpenProfile, onClose }) {
+  const list = userIds.map((id) => users.find((u) => u.id === id)).filter(Boolean);
+
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4">
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center animate-scrim" style={{ background: "rgba(15,27,45,0.7)" }} onClick={onClose}>
+      <div
+        className="w-full md:max-w-sm max-h-[75vh] flex flex-col rounded-t-2xl md:rounded-lg overflow-hidden animate-modal-rise glass-strong"
+        style={{ border: `1px solid ${COLORS.border}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+          <span className="text-sm font-semibold" style={{ color: COLORS.ivory }}>
+            {title}
+          </span>
+          <button onClick={onClose} className="press-scale">
+            <X size={18} color={COLORS.muted} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 py-2">
+          {list.length === 0 ? (
+            <p className="text-sm text-center py-10" style={{ color: COLORS.muted }}>
+              Henüz kimse yok.
+            </p>
+          ) : (
+            list.map((u) => {
+              const isFollowing = follows.some((f) => f.follower_id === currentUser.id && f.following_id === u.id);
+              const isSelf = u.id === currentUser.id;
+              return (
+                <div key={u.id} className="flex items-center justify-between px-2 py-2.5 rounded-lg animate-fade-slide-soft">
+                  <button
+                    className="flex items-center gap-3 press-scale"
+                    onClick={() => {
+                      onOpenProfile(u.id);
+                      onClose();
+                    }}
+                  >
+                    <Avatar name={u.username} size={40} avatarUrl={u.avatar_url} />
+                    <span className="text-sm font-medium" style={{ color: COLORS.ivory }}>
+                      {u.username}
+                    </span>
+                  </button>
+                  {!isSelf && (
+                    <button
+                      onClick={() => onToggleFollow(u.id, isFollowing)}
+                      className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md press-scale transition-colors"
+                      style={
+                        isFollowing
+                          ? { background: COLORS.surfaceAlt, color: COLORS.muted, border: `1px solid ${COLORS.border}` }
+                          : { background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }
+                      }
+                    >
+                      {isFollowing ? <UserCheck size={13} /> : <UserPlus size={13} />}
+                      {isFollowing ? "Takiptesin" : "Takip et"}
+                    </button>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------- Profile ---------------------------------- */
+
+function Profile({ profileUser, isOwnProfile, posts, users, follows, currentUser, onToggleFollow, onEditProfile, onMessage, onBack, onOpenProfile, postsLoading }) {
+  const [listModal, setListModal] = useState(null); // null | 'followers' | 'following'
+
+  const mine = useMemo(() => posts.filter((p) => p.userId === profileUser.id), [posts, profileUser.id]);
+  const totalLikes = useMemo(() => mine.reduce((sum, p) => sum + (p.likes?.length || 0), 0), [mine]);
+
+  const followerIds = useMemo(
+    () => follows.filter((f) => f.following_id === profileUser.id).map((f) => f.follower_id),
+    [follows, profileUser.id]
+  );
+  const followingIds = useMemo(
+    () => follows.filter((f) => f.follower_id === profileUser.id).map((f) => f.following_id),
+    [follows, profileUser.id]
+  );
+  const isFollowing = follows.some((f) => f.follower_id === currentUser.id && f.following_id === profileUser.id);
+
+  return (
+    <div className="max-w-3xl mx-auto py-8 px-4 animate-fade-slide">
       {!isOwnProfile && (
-        <button onClick={onBack} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.muted }}>
+        <button onClick={onBack} className="flex items-center gap-1 text-sm mb-4 press-scale" style={{ color: COLORS.muted }}>
           <ArrowLeft size={16} /> Geri
         </button>
       )}
-      <div className="flex items-center gap-8 mb-6">
-        <Avatar name={profileUser.username} size={84} avatarUrl={profileUser.avatar_url} />
-        <div className="flex-1">
-          <div className="flex items-center gap-4 mb-3">
-            <h2 className="text-xl font-semibold" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
-              {profileUser.username}
-            </h2>
-            {isOwnProfile ? (
+
+      <div className="flex flex-col items-center text-center mb-6 animate-fade-slide-soft">
+        <Avatar name={profileUser.username} size={96} avatarUrl={profileUser.avatar_url} />
+        <h2 className="text-xl font-semibold mt-3" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
+          {profileUser.username}
+        </h2>
+        {profileUser.bio ? (
+          <p className="text-sm mt-1.5 max-w-sm" style={{ color: COLORS.ivory }}>
+            {profileUser.bio}
+          </p>
+        ) : isOwnProfile ? (
+          <p className="text-sm mt-1.5" style={{ color: COLORS.muted }}>
+            Kendini anlatan kısa bir biyografi ekle
+          </p>
+        ) : null}
+
+        <div className="flex items-center gap-8 mt-5">
+          <div className="text-center">
+            <p className="text-base font-bold" style={{ color: COLORS.ivory }}>
+              {mine.length}
+            </p>
+            <p className="text-[11px] uppercase tracking-wide" style={{ color: COLORS.muted }}>
+              Gönderi
+            </p>
+          </div>
+          <button className="text-center press-scale" onClick={() => setListModal("followers")}>
+            <p className="text-base font-bold" style={{ color: COLORS.ivory }}>
+              {followerIds.length}
+            </p>
+            <p className="text-[11px] uppercase tracking-wide" style={{ color: COLORS.muted }}>
+              Takipçi
+            </p>
+          </button>
+          <button className="text-center press-scale" onClick={() => setListModal("following")}>
+            <p className="text-base font-bold" style={{ color: COLORS.ivory }}>
+              {followingIds.length}
+            </p>
+            <p className="text-[11px] uppercase tracking-wide" style={{ color: COLORS.muted }}>
+              Takip
+            </p>
+          </button>
+          <div className="text-center">
+            <p className="text-base font-bold" style={{ color: COLORS.ivory }}>
+              {totalLikes}
+            </p>
+            <p className="text-[11px] uppercase tracking-wide" style={{ color: COLORS.muted }}>
+              Beğeni
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 mt-5">
+          {isOwnProfile ? (
+            <button
+              onClick={onEditProfile}
+              className="flex items-center gap-1.5 text-sm font-medium px-5 py-2 rounded-md press-scale"
+              style={{ border: `1px solid ${COLORS.border}`, color: COLORS.ivory, background: COLORS.surfaceAlt }}
+            >
+              <Settings size={14} />
+              Profili düzenle
+            </button>
+          ) : (
+            <>
               <button
-                onClick={onEditProfile}
-                className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-md"
-                style={{ border: `1px solid ${COLORS.border}`, color: COLORS.muted }}
+                onClick={() => onToggleFollow(profileUser.id, isFollowing)}
+                className="flex items-center gap-1.5 text-sm font-semibold px-5 py-2 rounded-md press-scale transition-colors"
+                style={
+                  isFollowing
+                    ? { background: COLORS.surfaceAlt, color: COLORS.ivory, border: `1px solid ${COLORS.border}` }
+                    : { background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }
+                }
               >
-                <Settings size={14} />
-                Profili düzenle
+                {isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}
+                {isFollowing ? "Takip ediliyor" : "Takip et"}
               </button>
-            ) : (
               <button
                 onClick={onMessage}
-                className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-md"
+                className="flex items-center gap-1.5 text-sm font-medium px-5 py-2 rounded-md press-scale"
                 style={{ border: `1px solid ${COLORS.bronze}`, color: COLORS.bronzeSoft }}
               >
                 <Send size={14} />
-                Mesaj gönder
+                Mesaj
               </button>
-            )}
-          </div>
-          <div className="flex gap-6 text-sm" style={{ color: COLORS.ivory }}>
-            <span>
-              <b>{mine.length}</b> gönderi
-            </span>
-          </div>
-          {profileUser.bio && (
-            <p className="text-sm mt-2" style={{ color: COLORS.ivory }}>
-              {profileUser.bio}
-            </p>
+            </>
           )}
         </div>
       </div>
 
       <TileMotif className="mb-4 rounded-full" />
 
-      {mine.length === 0 ? (
+      {postsLoading ? (
+        <GridSkeleton />
+      ) : mine.length === 0 ? (
         <EmptyState
           icon={Grid3x3}
-          title={isOwnProfile ? "Henüz paylaşım yok" : "Henüz paylaşım yok"}
+          title="Henüz paylaşım yok"
           subtitle={isOwnProfile ? '"Oluştur" bölümünden ilk gönderini paylaş' : undefined}
         />
       ) : (
         <div className="grid grid-cols-3 gap-1">
-          {mine.map((post) => (
-            <div key={post.id} className="aspect-square" style={{ background: COLORS.surfaceAlt }}>
-              {post.image && <img src={post.image} alt="" className="w-full h-full object-cover" />}
+          {mine.map((post, i) => (
+            <div
+              key={post.id}
+              className="aspect-square relative overflow-hidden animate-pop-in"
+              style={{ background: COLORS.surfaceAlt, animationDelay: `${Math.min(i, 8) * 0.03}s` }}
+            >
+              {post.image &&
+                (post.mediaType === "video" ? (
+                  <video src={post.image} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                ) : (
+                  <img src={post.image} alt="" className="w-full h-full object-cover" />
+                ))}
+              {post.mediaType === "video" && (
+                <div className="absolute top-1.5 right-1.5">
+                  <Play size={13} color="#fff" fill="#fff" />
+                </div>
+              )}
             </div>
           ))}
         </div>
+      )}
+
+      {listModal && (
+        <FollowListModal
+          title={listModal === "followers" ? "Takipçiler" : "Takip edilenler"}
+          userIds={listModal === "followers" ? followerIds : followingIds}
+          users={users}
+          currentUser={currentUser}
+          follows={follows}
+          onToggleFollow={onToggleFollow}
+          onOpenProfile={(id) => {
+            onOpenProfile(id);
+            setListModal(null);
+          }}
+          onClose={() => setListModal(null)}
+        />
       )}
     </div>
   );
@@ -1107,6 +1656,7 @@ export default function Meydan() {
   const [active, setActive] = useState("feed");
   const [posts, setPosts] = useState([]);
   const [users, setUsers] = useState([]);
+  const [follows, setFollows] = useState([]);
   const [chats, setChats] = useState([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [openChatId, setOpenChatId] = useState(null);
@@ -1116,6 +1666,7 @@ export default function Meydan() {
 
   const refreshPosts = useCallback(async () => setPosts(await api.fetchPosts()), []);
   const refreshUsers = useCallback(async () => setUsers(await api.fetchProfiles()), []);
+  const refreshFollows = useCallback(async () => setFollows(await api.fetchFollows()), []);
   const refreshChats = useCallback(async () => {
     const session = await api.getCurrentSession();
     if (!session?.user?.id) return;
@@ -1161,10 +1712,10 @@ export default function Meydan() {
   useEffect(() => {
     if (!user) return;
     setLoadingPosts(true);
-    Promise.all([refreshPosts(), refreshUsers(), refreshChats()]).finally(() => setLoadingPosts(false));
-  }, [user, refreshPosts, refreshUsers, refreshChats]);
+    Promise.all([refreshPosts(), refreshUsers(), refreshFollows(), refreshChats()]).finally(() => setLoadingPosts(false));
+  }, [user, refreshPosts, refreshUsers, refreshFollows, refreshChats]);
 
-  // Realtime abonelikleri: yeni kullanıcı, yeni gönderi, yeni beğeni, yeni mesaj
+  // Realtime abonelikleri: yeni kullanıcı, yeni gönderi, yeni beğeni, yeni mesaj, takip
   useEffect(() => {
     if (!user) return;
 
@@ -1182,6 +1733,9 @@ export default function Meydan() {
       .on("postgres_changes", { event: "*", schema: "public", table: "comments" }, () => {
         refreshPosts();
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "follows" }, () => {
+        refreshFollows();
+      })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
         refreshChats();
       })
@@ -1190,7 +1744,7 @@ export default function Meydan() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, refreshUsers, refreshPosts, refreshChats]);
+  }, [user, refreshUsers, refreshPosts, refreshFollows, refreshChats]);
 
   const toggleLike = async (postId) => {
     const post = posts.find((p) => p.id === postId);
@@ -1208,6 +1762,26 @@ export default function Meydan() {
     } catch (err) {
       console.error("Beğeni işlemi başarısız", err);
       refreshPosts();
+    }
+  };
+
+  const toggleFollow = async (targetUserId, alreadyFollowing) => {
+    if (!user || targetUserId === user.id) return;
+    // İyimser güncelleme
+    setFollows((prev) =>
+      alreadyFollowing
+        ? prev.filter((f) => !(f.follower_id === user.id && f.following_id === targetUserId))
+        : [...prev, { follower_id: user.id, following_id: targetUserId }]
+    );
+    try {
+      if (alreadyFollowing) {
+        await api.unfollowUser(user.id, targetUserId);
+      } else {
+        await api.followUser(user.id, targetUserId);
+      }
+    } catch (err) {
+      console.error("Takip işlemi başarısız", err);
+      refreshFollows();
     }
   };
 
@@ -1271,32 +1845,50 @@ export default function Meydan() {
         user={user}
       />
       <div className="flex-1 pb-16 md:pb-0">
-        {active === "feed" && (
-          <Feed
-            loading={loadingPosts}
-            posts={posts}
-            currentUser={user}
-            onToggleLike={toggleLike}
-            onOpenProfile={openProfile}
-            onOpenComments={setCommentsPost}
-            onDelete={handleDeletePost}
-          />
-        )}
-        {active === "new" && <CreatePost user={user} onCreated={refreshPosts} goTo={setActive} />}
-        {active === "discover" && <Discover posts={posts} users={users} currentUser={user} onOpenChat={openChatWith} onOpenProfile={openProfile} />}
-        {active === "profile" && (
-          <Profile
-            profileUser={profileUser}
-            isOwnProfile={isOwnProfile}
-            posts={posts}
-            onEditProfile={() => setShowEditProfile(true)}
-            onMessage={() => openChatWith(profileUser)}
-            onBack={() => setViewingUserId(null)}
-          />
-        )}
-        {active === "messages" && (
-          <Messages user={user} chats={chats} refreshChats={refreshChats} openChatId={openChatId} setOpenChatId={setOpenChatId} />
-        )}
+        <PageTransition transitionKey={active}>
+          {active === "feed" && (
+            <Feed
+              loading={loadingPosts}
+              posts={posts}
+              currentUser={user}
+              onToggleLike={toggleLike}
+              onOpenProfile={openProfile}
+              onOpenComments={setCommentsPost}
+              onDelete={handleDeletePost}
+            />
+          )}
+          {active === "new" && <CreatePost user={user} onCreated={refreshPosts} goTo={setActive} />}
+          {active === "discover" && (
+            <Discover
+              posts={posts}
+              users={users}
+              currentUser={user}
+              follows={follows}
+              onToggleFollow={toggleFollow}
+              onOpenChat={openChatWith}
+              onOpenProfile={openProfile}
+            />
+          )}
+          {active === "profile" && (
+            <Profile
+              profileUser={profileUser}
+              isOwnProfile={isOwnProfile}
+              posts={posts}
+              users={users}
+              follows={follows}
+              currentUser={user}
+              onToggleFollow={toggleFollow}
+              onEditProfile={() => setShowEditProfile(true)}
+              onMessage={() => openChatWith(profileUser)}
+              onBack={() => setViewingUserId(null)}
+              onOpenProfile={openProfile}
+              postsLoading={loadingPosts}
+            />
+          )}
+          {active === "messages" && (
+            <Messages user={user} chats={chats} refreshChats={refreshChats} openChatId={openChatId} setOpenChatId={setOpenChatId} />
+          )}
+        </PageTransition>
       </div>
       <MobileNav
         active={active}
