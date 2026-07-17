@@ -117,7 +117,9 @@ export async function createPost({ userId, imageUrl, caption, mediaType = "image
 export async function fetchPosts() {
   const { data: posts, error } = await supabase
     .from("posts")
-    .select("id, user_id, image_url, caption, media_type, created_at, profiles(username, avatar_url)")
+    .select(
+      "id, user_id, image_url, caption, media_type, created_at, profiles!posts_user_id_fkey(username, avatar_url)"
+    )
     .order("created_at", { ascending: false });
   if (error) throw error;
 
