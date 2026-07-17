@@ -111,6 +111,33 @@ create policy "Kullanıcı kendi beğenisini kaldırabilir"
   using (auth.uid() = user_id);
 
 -- ------------------------------------------------------------
+-- 3b) COMMENTS
+-- ------------------------------------------------------------
+create table if not exists public.comments (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.posts (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  text text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists comments_post_id_idx on public.comments (post_id, created_at);
+
+alter table public.comments enable row level security;
+
+create policy "Yorumlar herkes tarafından görülebilir"
+  on public.comments for select
+  using (true);
+
+create policy "Kullanıcı kendi yorumunu ekleyebilir"
+  on public.comments for insert
+  with check (auth.uid() = user_id);
+
+create policy "Kullanıcı sadece kendi yorumunu silebilir"
+  on public.comments for delete
+  using (auth.uid() = user_id);
+
+-- ------------------------------------------------------------
 -- 4) CONVERSATIONS + CONVERSATION_MEMBERS
 -- ------------------------------------------------------------
 create table if not exists public.conversations (
@@ -222,7 +249,51 @@ create policy "Kullanıcı kendi yüklediği dosyayı silebilir"
 alter publication supabase_realtime add table public.profiles;
 alter publication supabase_realtime add table public.posts;
 alter publication supabase_realtime add table public.likes;
+alter publication supabase_realtime add table public.comments;
 alter publication supabase_realtime add table public.messages;
+
+-- ------------------------------------------------------------
+-- 8) conversation_members / conversations / messages için
+-- sonsuz döngü (infinite recursion) düzeltmesi. Bu bölüm daha
+-- önce projeyi kurmuş olanlar için de güvenle tekrar çalıştırılabilir.
+-- ------------------------------------------------------------
+create or replace function public.is_conversation_member(_conversation_id uuid, _user_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.conversation_members
+    where conversation_id = _conversation_id
+      and user_id = _user_id
+  );
+$$;
+
+drop policy if exists "Üyeler kendi konuşmalarındaki üyelik listesini görebilir" on public.conversation_members;
+drop policy if exists "Kullanıcı üyesi olduğu konuşmaları görebilir" on public.conversations;
+drop policy if exists "Üyeler kendi konuşmalarındaki mesajları görebilir" on public.messages;
+drop policy if exists "Kullanıcı sadece kendi mesajını, üyesi olduğu bir konuşmaya gönderebilir" on public.messages;
+
+create policy "Üyeler kendi konuşmalarındaki üyelik listesini görebilir"
+  on public.conversation_members for select
+  using (public.is_conversation_member(conversation_id, auth.uid()));
+
+create policy "Kullanıcı üyesi olduğu konuşmaları görebilir"
+  on public.conversations for select
+  using (public.is_conversation_member(id, auth.uid()));
+
+create policy "Üyeler kendi konuşmalarındaki mesajları görebilir"
+  on public.messages for select
+  using (public.is_conversation_member(conversation_id, auth.uid()));
+
+create policy "Kullanıcı sadece kendi mesajını, üyesi olduğu bir konuşmaya gönderebilir"
+  on public.messages for insert
+  with check (
+    auth.uid() = sender_id
+    and public.is_conversation_member(conversation_id, auth.uid())
+  );
 
 -- ============================================================
 -- Bitti. Sıradaki adım için README.md dosyasındaki kurulum
