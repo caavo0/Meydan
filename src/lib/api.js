@@ -80,12 +80,13 @@ export async function uploadAvatar(userId, file) {
    ========================================================================== */
 
 export async function uploadPostImage(userId, file) {
-  const ext = file.name.split(".").pop() || "jpg";
+  const ext = file.name?.split(".").pop() || (file.type?.includes("video") ? "webm" : "jpg");
   const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
   const { error: uploadError } = await supabase.storage.from("images").upload(path, file, {
     cacheControl: "3600",
     upsert: false,
+    contentType: file.type || undefined,
   });
   if (uploadError) throw uploadError;
 
@@ -93,10 +94,17 @@ export async function uploadPostImage(userId, file) {
   return data.publicUrl;
 }
 
-export async function createPost({ userId, imageUrl, caption }) {
+// Kamera / galeriden gelen fotoğraf ya da video dosyasını yükler.
+export async function uploadPostMedia(userId, file) {
+  const mediaType = (file.type || "").startsWith("video") ? "video" : "image";
+  const url = await uploadPostImage(userId, file);
+  return { url, mediaType };
+}
+
+export async function createPost({ userId, imageUrl, caption, mediaType = "image" }) {
   const { data, error } = await supabase
     .from("posts")
-    .insert({ user_id: userId, image_url: imageUrl, caption })
+    .insert({ user_id: userId, image_url: imageUrl, caption, media_type: mediaType })
     .select()
     .single();
   if (error) throw error;
@@ -109,7 +117,7 @@ export async function createPost({ userId, imageUrl, caption }) {
 export async function fetchPosts() {
   const { data: posts, error } = await supabase
     .from("posts")
-    .select("id, user_id, image_url, caption, created_at, profiles(username, avatar_url)")
+    .select("id, user_id, image_url, caption, media_type, created_at, profiles(username, avatar_url)")
     .order("created_at", { ascending: false });
   if (error) throw error;
 
@@ -126,6 +134,7 @@ export async function fetchPosts() {
     username: p.profiles?.username || "silinmiş kullanıcı",
     avatarUrl: p.profiles?.avatar_url || null,
     image: p.image_url,
+    mediaType: p.media_type || "image",
     caption: p.caption,
     time: new Date(p.created_at).toLocaleString("tr-TR"),
     likes: (likes || []).filter((l) => l.post_id === p.id).map((l) => l.user_id),
@@ -274,5 +283,35 @@ export async function sendMessage(conversationId, senderId, text) {
   const { error } = await supabase
     .from("messages")
     .insert({ conversation_id: conversationId, sender_id: senderId, text });
+  if (error) throw error;
+}
+
+/* ==========================================================================
+   FOLLOWS
+   ========================================================================== */
+
+// Uygulama küçük ölçekli olduğu için (posts/profiles gibi) tüm takip
+// ilişkisini tek seferde çekip App state'inde tutuyoruz; takipçi/takip
+// sayıları ve "takip ediyor musun" durumu buradan client-side hesaplanıyor.
+export async function fetchFollows() {
+  const { data, error } = await supabase.from("follows").select("follower_id, following_id, created_at");
+  if (error) throw error;
+  return data || [];
+}
+
+export async function followUser(followerId, followingId) {
+  if (followerId === followingId) return;
+  const { error } = await supabase.from("follows").insert({ follower_id: followerId, following_id: followingId });
+  // Aynı takip iki kere hızlıca tıklanırsa unique constraint hatası gelebilir,
+  // bu durumda zaten takip ediliyor demektir — sessizce geç.
+  if (error && error.code !== "23505") throw error;
+}
+
+export async function unfollowUser(followerId, followingId) {
+  const { error } = await supabase
+    .from("follows")
+    .delete()
+    .eq("follower_id", followerId)
+    .eq("following_id", followingId);
   if (error) throw error;
 }
