@@ -3501,7 +3501,7 @@ export default function Meydan() {
     <div className="flex min-h-screen" style={{ background: COLORS.bg, color: COLORS.ivory, fontFamily: "system-ui, -apple-system, sans-serif" }}>
       <Sidebar active={navTab} setActive={goToTab} onLogout={handleLogout} user={user} />
       <div className="flex-1 pb-16 md:pb-0">
-        {["feed", "discover", "reels"].includes(active) && (
+        {active === "feed" && (
           <TopBar active={active} setActive={goToTab} hasUnreadNotifs={hasUnreadNotifs} unreadMessages={hasUnreadMessages} />
         )}
         <PageTransition transitionKey={active}>
