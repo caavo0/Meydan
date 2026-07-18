@@ -417,8 +417,8 @@ function Sidebar({ active, setActive, onLogout, user }) {
   const items = [
     { key: "feed", label: "Akış", icon: Home },
     { key: "discover", label: "Keşfet", icon: Compass },
-    { key: "reels", label: "Kısalar", icon: Film },
     { key: "new", label: "Oluştur", icon: PlusSquare },
+    { key: "reels", label: "Kısalar", icon: Film },
     { key: "profile", label: "Profil", icon: User },
   ];
   return (
@@ -475,8 +475,8 @@ function MobileNav({ active, setActive }) {
   const items = [
     { key: "feed", icon: Home },
     { key: "discover", icon: Compass },
-    { key: "reels", icon: Film },
     { key: "new", icon: PlusSquare },
+    { key: "reels", icon: Film },
     { key: "profile", icon: User },
   ];
   return (
@@ -980,9 +980,27 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
         }
         streamRef.current = stream;
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {});
+          const videoEl = videoRef.current;
+          videoEl.srcObject = stream;
+          await videoEl.play().catch(() => {});
+          // `play()` sözü yerine gelmesi, ilk karenin gerçekten ekrana çizildiği
+          // anlamına gelmez — bazı cihazlarda (özellikle Android WebView) bu ikisi
+          // arasında kısa bir boşluk olur ve kullanıcı o sırada çekim tuşuna basarsa
+          // ekran anlık olarak siyah görünür. Gerçek ilk kare çizilene kadar bekleyip
+          // ondan sonra "hazır" işaretlemek bu anlık siyah ekranı engeller.
+          if (videoEl.readyState < 2) {
+            await new Promise((resolve) => {
+              const done = () => {
+                videoEl.removeEventListener("loadeddata", done);
+                resolve();
+              };
+              videoEl.addEventListener("loadeddata", done, { once: true });
+              // güvenlik ağı: bir saniye içinde olay gelmezse yine de devam et
+              setTimeout(done, 1000);
+            });
+          }
         }
+        if (cancelled) return;
         // Flash (torch) ve zoom desteğini cihaz/tarayıcıdan kontrol et.
         // Her tarayıcı/cihaz desteklemez (özellikle iOS Safari) — desteklenmediğinde
         // ilgili kontrol arayüzde gösterilmez.
@@ -1037,6 +1055,20 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
   );
 
   useEffect(() => () => clearInterval(tickRef.current), []);
+
+  // Bazı tarayıcılarda (özellikle Android WebView) MediaRecorder aktifken ya da
+  // sekme/uygulama arka plandan öne dönerken canlı önizleme kendiliğinden duruyor
+  // ve tek kare siyah kalıyor. Kayıt başladığında ve sayfa yeniden görünür
+  // olduğunda oynatmayı zorla yeniden tetikleyerek bunu önlüyoruz.
+  useEffect(() => {
+    const resume = () => {
+      const v = videoRef.current;
+      if (v && v.srcObject && v.paused) v.play().catch(() => {});
+    };
+    resume();
+    document.addEventListener("visibilitychange", resume);
+    return () => document.removeEventListener("visibilitychange", resume);
+  }, [isRecording]);
 
   const takePhoto = useCallback(() => {
     const video = videoRef.current;
@@ -1171,9 +1203,15 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
               ref={videoRef}
               autoPlay
               playsInline
+              webkit-playsinline="true"
+              disablePictureInPicture
               muted
               className="w-full h-full object-cover"
-              style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
+              style={{
+                transform: facingMode === "user" ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
+                WebkitTransform: facingMode === "user" ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
+                backfaceVisibility: "hidden",
+              }}
             />
             {!ready && (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1342,7 +1380,7 @@ function CreatePost({ user, onCreated, goTo }) {
       <div className="rounded-lg overflow-hidden animate-pop-in" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
         <div className="relative w-full aspect-square" style={{ background: "#000" }}>
           {mediaType === "video" ? (
-            <video src={preview} className="w-full h-full object-cover" controls loop playsInline />
+            <video src={preview} className="w-full h-full object-cover" controls loop playsInline preload="auto" />
           ) : (
             <img src={preview} alt="önizleme" className="w-full h-full object-cover" />
           )}
@@ -1396,7 +1434,7 @@ function CreatePost({ user, onCreated, goTo }) {
 
 /* --------------------------------- Discover -------------------------------- */
 
-function Discover({ posts, users, currentUser, follows, onToggleFollow, onOpenChat, onOpenProfile }) {
+function Discover({ posts, users, currentUser, follows, onToggleFollow, onOpenChat, onOpenProfile, onOpenReel }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState("posts"); // posts | users
 
@@ -1448,7 +1486,7 @@ function Discover({ posts, users, currentUser, follows, onToggleFollow, onOpenCh
             {filteredPosts.map((post) => (
               <button
                 key={post.id}
-                onClick={() => onOpenProfile(post.userId)}
+                onClick={() => (post.mediaType === "video" ? onOpenReel(post) : onOpenProfile(post.userId))}
                 className="aspect-square relative group overflow-hidden text-left press-scale"
                 style={{ background: COLORS.surfaceAlt }}
               >
@@ -1670,6 +1708,68 @@ function Reels({ posts, currentUser, onToggleLike, onOpenProfile, onOpenComments
           />
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ------------------------------ Reels Overlay -------------------------------- */
+/* Keşfet'te ya da profilde bir videoya tıklandığında, kanala/gönderiye değil
+   doğrudan o videoya — Kısalar akışındaki gibi tam ekran dikey bir izleyiciye —
+   düşer. Sidebar/TopBar'dan bağımsız, tarayıcının gerçek görünür yüksekliğine
+   (dvh) oturan tam ekran bir katman olarak render edilir. */
+
+function ReelsOverlay({ posts, startId, currentUser, onToggleLike, onOpenProfile, onOpenComments, onClose }) {
+  const containerRef = useRef(null);
+  const startIndex = Math.max(0, posts.findIndex((p) => p.id === startId));
+  const [activeIndex, setActiveIndex] = useState(startIndex === -1 ? 0 : startIndex);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const idx = startIndex === -1 ? 0 : startIndex;
+    el.scrollTop = idx * el.clientHeight;
+    setActiveIndex(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const idx = Math.round(el.scrollTop / el.clientHeight);
+    setActiveIndex((prev) => (prev === idx ? prev : idx));
+  }, []);
+
+  if (posts.length === 0) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 animate-scrim" style={{ background: "#000", height: "100dvh" }}>
+      <button
+        onClick={onClose}
+        className="absolute top-4 left-4 z-20 p-2 rounded-full press-scale"
+        style={{ background: "rgba(15,27,45,0.55)" }}
+        aria-label="Geri"
+      >
+        <ArrowLeft size={20} color="#fff" />
+      </button>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="w-full overflow-y-scroll snap-y snap-mandatory"
+        style={{ height: "100dvh", scrollbarWidth: "none" }}
+      >
+        {posts.map((post, i) => (
+          <div key={post.id} className="w-full snap-start" style={{ height: "100dvh" }}>
+            <ReelCard
+              post={post}
+              currentUser={currentUser}
+              onToggleLike={onToggleLike}
+              onOpenProfile={onOpenProfile}
+              onOpenComments={onOpenComments}
+              isActive={i === activeIndex}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2517,6 +2617,7 @@ function Profile({
   onOpenComments,
   onDelete,
   onUpdatePost,
+  onOpenReel,
 }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -2717,7 +2818,7 @@ function Profile({
           {mine.map((post, i) => (
             <button
               key={post.id}
-              onClick={() => setViewerIndex(i)}
+              onClick={() => (post.mediaType === "video" ? onOpenReel(post, mine) : setViewerIndex(i))}
               className="aspect-square relative overflow-hidden animate-pop-in press-scale text-left"
               style={{ background: COLORS.surfaceAlt, animationDelay: `${Math.min(i, 8) * 0.03}s` }}
               aria-label="Gönderiyi aç"
@@ -3065,6 +3166,7 @@ export default function Meydan() {
   const [notifications, setNotifications] = useState([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [lastSeenNotifsAt, setLastSeenNotifsAt] = useState(null);
+  const [reelsOverlay, setReelsOverlay] = useState(null); // { posts: [...], startId } | null
 
   const refreshPosts = useCallback(async () => setPosts(await api.fetchPosts()), []);
   const refreshUsers = useCallback(async () => setUsers(await api.fetchProfiles()), []);
@@ -3257,6 +3359,11 @@ export default function Meydan() {
   const blockedIds = useMemo(() => new Set(blockedUsers.map((b) => b.id)), [blockedUsers]);
   const visiblePosts = useMemo(() => posts.filter((p) => !blockedIds.has(p.userId)), [posts, blockedIds]);
 
+  const openReel = useCallback((post, list) => {
+    const source = (list || visiblePosts).filter((p) => p.mediaType === "video");
+    setReelsOverlay({ posts: source, startId: post.id });
+  }, [visiblePosts]);
+
   const openProfile = (userId) => {
     // navTab kasıtlı olarak değiştirilmiyor: Keşfet'ten ya da mesajlardan bir
     // profile giriliyorsa alt menüde geldiğin sekme vurgulu kalmaya devam eder.
@@ -3420,6 +3527,7 @@ export default function Meydan() {
               onToggleFollow={toggleFollow}
               onOpenChat={openChatWith}
               onOpenProfile={openProfile}
+              onOpenReel={openReel}
             />
           )}
           {active === "reels" && (
@@ -3461,6 +3569,7 @@ export default function Meydan() {
               onOpenComments={setCommentsPost}
               onDelete={handleDeletePost}
               onUpdatePost={handleUpdatePost}
+              onOpenReel={openReel}
             />
           )}
           {active === "followList" && followListView && (
@@ -3546,6 +3655,21 @@ export default function Meydan() {
             setUser((prev) => ({ ...prev, ...updated }));
             refreshUsers();
           }}
+        />
+      )}
+
+      {reelsOverlay && (
+        <ReelsOverlay
+          posts={reelsOverlay.posts}
+          startId={reelsOverlay.startId}
+          currentUser={user}
+          onToggleLike={toggleLike}
+          onOpenProfile={(id) => {
+            setReelsOverlay(null);
+            openProfile(id);
+          }}
+          onOpenComments={setCommentsPost}
+          onClose={() => setReelsOverlay(null)}
         />
       )}
 
