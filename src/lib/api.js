@@ -117,7 +117,9 @@ export async function createPost({ userId, imageUrl, caption, mediaType = "image
 export async function fetchPosts() {
   const { data: posts, error } = await supabase
     .from("posts")
-    .select("id, user_id, image_url, caption, media_type, created_at, profiles!posts_user_id_fkey(username, avatar_url)")
+    .select(
+      "id, user_id, image_url, caption, media_type, comments_enabled, pinned, created_at, profiles!posts_user_id_fkey(username, avatar_url)"
+    )
     .order("created_at", { ascending: false });
   if (error) throw error;
 
@@ -136,6 +138,8 @@ export async function fetchPosts() {
     image: p.image_url,
     mediaType: p.media_type || "image",
     caption: p.caption,
+    commentsEnabled: p.comments_enabled !== false,
+    pinned: !!p.pinned,
     time: new Date(p.created_at).toLocaleString("tr-TR"),
     likes: (likes || []).filter((l) => l.post_id === p.id).map((l) => l.user_id),
     commentCount: (comments || []).filter((c) => c.post_id === p.id).length,
@@ -161,6 +165,27 @@ export async function toggleLike(postId, userId, alreadyLiked) {
 export async function deletePost(postId, userId) {
   const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", userId);
   if (error) throw error;
+}
+
+// Kendi gönderisinde: açıklamayı değiştirme, yorumları aç/kapa, sabitle/kaldır.
+// `updates` içinde caption / comments_enabled / pinned alanlarından biri veya
+// birkaçı olabilir. RLS, sadece auth.uid() = user_id olan satırların
+// güncellenebilmesini garanti eder (bkz. migration 006).
+export async function updatePost(postId, userId, updates) {
+  const allowed = {};
+  if (updates.caption !== undefined) allowed.caption = updates.caption;
+  if (updates.comments_enabled !== undefined) allowed.comments_enabled = updates.comments_enabled;
+  if (updates.pinned !== undefined) allowed.pinned = updates.pinned;
+
+  const { data, error } = await supabase
+    .from("posts")
+    .update(allowed)
+    .eq("id", postId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 /* ==========================================================================
