@@ -342,6 +342,89 @@ export async function unfollowUser(followerId, followingId) {
 }
 
 /* ==========================================================================
+   BİLDİRİMLER — beğeni / yorum / yeni takipçi bildirimleri, mevcut
+   likes / comments / follows tablolarından türetilir (ek migration
+   gerekmez, hepsinin created_at kolonu ve herkese açık select politikası
+   zaten var).
+   ========================================================================== */
+
+export async function fetchNotifications(userId) {
+  const { data: myPosts, error: myPostsError } = await supabase
+    .from("posts")
+    .select("id, image_url, media_type")
+    .eq("user_id", userId);
+  if (myPostsError) throw myPostsError;
+
+  const myPostIds = (myPosts || []).map((p) => p.id);
+  const postById = new Map((myPosts || []).map((p) => [p.id, p]));
+
+  let likeNotifs = [];
+  let commentNotifs = [];
+  if (myPostIds.length > 0) {
+    const { data: likes, error: likesError } = await supabase
+      .from("likes")
+      .select("post_id, user_id, created_at, profiles(username, avatar_url)")
+      .in("post_id", myPostIds)
+      .neq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(40);
+    if (likesError) throw likesError;
+    likeNotifs = (likes || []).map((l) => ({
+      id: `like-${l.post_id}-${l.user_id}`,
+      type: "like",
+      actorId: l.user_id,
+      actorUsername: l.profiles?.username || "silinmiş kullanıcı",
+      actorAvatar: l.profiles?.avatar_url || null,
+      postId: l.post_id,
+      postImage: postById.get(l.post_id)?.image_url || null,
+      postMediaType: postById.get(l.post_id)?.media_type || "image",
+      createdAt: l.created_at,
+    }));
+
+    const { data: comments, error: commentsError } = await supabase
+      .from("comments")
+      .select("id, post_id, user_id, text, created_at, profiles(username, avatar_url)")
+      .in("post_id", myPostIds)
+      .neq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(40);
+    if (commentsError) throw commentsError;
+    commentNotifs = (comments || []).map((c) => ({
+      id: `comment-${c.id}`,
+      type: "comment",
+      actorId: c.user_id,
+      actorUsername: c.profiles?.username || "silinmiş kullanıcı",
+      actorAvatar: c.profiles?.avatar_url || null,
+      postId: c.post_id,
+      postImage: postById.get(c.post_id)?.image_url || null,
+      postMediaType: postById.get(c.post_id)?.media_type || "image",
+      text: c.text,
+      createdAt: c.created_at,
+    }));
+  }
+
+  const { data: newFollowers, error: followsError } = await supabase
+    .from("follows")
+    .select("follower_id, created_at, profiles!follows_follower_id_fkey(username, avatar_url)")
+    .eq("following_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(40);
+  if (followsError) throw followsError;
+  const followNotifs = (newFollowers || []).map((f) => ({
+    id: `follow-${f.follower_id}`,
+    type: "follow",
+    actorId: f.follower_id,
+    actorUsername: f.profiles?.username || "silinmiş kullanıcı",
+    actorAvatar: f.profiles?.avatar_url || null,
+    createdAt: f.created_at,
+  }));
+
+  return [...likeNotifs, ...commentNotifs, ...followNotifs].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+}
+
+/* ==========================================================================
    AYARLAR — profil düzenleme (kapak foto), şifre/e-posta/telefon, Google
    ========================================================================== */
 
