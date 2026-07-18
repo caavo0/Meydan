@@ -117,9 +117,7 @@ export async function createPost({ userId, imageUrl, caption, mediaType = "image
 export async function fetchPosts() {
   const { data: posts, error } = await supabase
     .from("posts")
-    .select(
-      "id, user_id, image_url, caption, media_type, created_at, profiles!posts_user_id_fkey(username, avatar_url)"
-    )
+    .select("id, user_id, image_url, caption, media_type, created_at, profiles(username, avatar_url)")
     .order("created_at", { ascending: false });
   if (error) throw error;
 
@@ -317,3 +315,90 @@ export async function unfollowUser(followerId, followingId) {
     .eq("following_id", followingId);
   if (error) throw error;
 }
+
+/* ==========================================================================
+   AYARLAR — profil düzenleme (kapak foto), şifre/e-posta/telefon, Google
+   ========================================================================== */
+
+export async function uploadCover(userId, file) {
+  const ext = file.name?.split(".").pop() || "jpg";
+  const path = `covers/${userId}/cover-${Date.now()}.${ext}`;
+  const { error: uploadError } = await supabase.storage.from("images").upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type || undefined,
+  });
+  if (uploadError) throw uploadError;
+  const { data } = supabase.storage.from("images").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+export async function changePassword(newPassword) {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
+export async function changeEmail(newEmail) {
+  const { error } = await supabase.auth.updateUser({ email: newEmail });
+  if (error) throw error;
+}
+
+export async function updatePhone(userId, phone) {
+  return updateProfile(userId, { phone });
+}
+
+export async function linkGoogleAccount() {
+  const { data, error } = await supabase.auth.linkIdentity({
+    provider: "google",
+    options: { redirectTo: window.location.origin },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function signInWithGoogle() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.origin },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteAccount() {
+  const { error } = await supabase.rpc("delete_own_account");
+  if (error) throw error;
+}
+
+/* ==========================================================================
+   ENGELLENEN KULLANICILAR
+   ========================================================================== */
+
+export async function fetchBlockedUsers(userId) {
+  const { data, error } = await supabase
+    .from("blocked_users")
+    .select("blocked_id, created_at, profiles!blocked_users_blocked_id_fkey(id, username, avatar_url)")
+    .eq("blocker_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((row) => ({
+    id: row.blocked_id,
+    username: row.profiles?.username || "silinmiş kullanıcı",
+    avatarUrl: row.profiles?.avatar_url || null,
+  }));
+}
+
+export async function blockUser(blockerId, blockedId) {
+  const { error } = await supabase.from("blocked_users").insert({ blocker_id: blockerId, blocked_id: blockedId });
+  if (error && error.code !== "23505") throw error;
+}
+
+export async function unblockUser(blockerId, blockedId) {
+  const { error } = await supabase
+    .from("blocked_users")
+    .delete()
+    .eq("blocker_id", blockerId)
+    .eq("blocked_id", blockedId);
+  if (error) throw error;
+}
+
