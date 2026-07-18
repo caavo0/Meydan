@@ -70,11 +70,16 @@ create table if not exists public.posts (
   user_id uuid not null references public.profiles (id) on delete cascade,
   image_url text not null,
   caption text default '',
+  media_type text not null default 'image',
+  comments_enabled boolean not null default true,
+  pinned boolean not null default false,
+  pinned_at timestamptz,
   created_at timestamptz not null default now()
 );
 
 create index if not exists posts_created_at_idx on public.posts (created_at desc);
 create index if not exists posts_user_id_idx on public.posts (user_id);
+create index if not exists posts_user_pinned_created_idx on public.posts (user_id, pinned desc, created_at desc);
 
 alter table public.posts enable row level security;
 
@@ -88,10 +93,42 @@ create policy "Kullanıcı kendi gönderisini oluşturabilir"
   on public.posts for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Kullanıcı sadece kendi gönderisini güncelleyebilir" on public.posts;
+create policy "Kullanıcı sadece kendi gönderisini güncelleyebilir"
+  on public.posts for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 drop policy if exists "Kullanıcı sadece kendi gönderisini silebilir" on public.posts;
 create policy "Kullanıcı sadece kendi gönderisini silebilir"
   on public.posts for delete
   using (auth.uid() = user_id);
+
+-- Bir kullanıcının aynı anda sadece TEK gönderisi sabitli olabilir.
+create or replace function public.enforce_single_pinned_post()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if new.pinned = true then
+    new.pinned_at := now();
+    update public.posts
+      set pinned = false, pinned_at = null
+      where user_id = new.user_id
+        and id <> new.id
+        and pinned = true;
+  else
+    new.pinned_at := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_post_pin_change on public.posts;
+create trigger on_post_pin_change
+  before insert or update of pinned on public.posts
+  for each row execute procedure public.enforce_single_pinned_post();
 
 -- ------------------------------------------------------------
 -- 3) LIKES  (bir kullanıcı bir gönderiyi sadece 1 kez beğenebilir)
@@ -146,7 +183,14 @@ create policy "Yorumlar herkes tarafından görülebilir"
 drop policy if exists "Kullanıcı kendi yorumunu ekleyebilir" on public.comments;
 create policy "Kullanıcı kendi yorumunu ekleyebilir"
   on public.comments for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.posts p
+      where p.id = comments.post_id
+        and p.comments_enabled = true
+    )
+  );
 
 drop policy if exists "Kullanıcı sadece kendi yorumunu silebilir" on public.comments;
 create policy "Kullanıcı sadece kendi yorumunu silebilir"
