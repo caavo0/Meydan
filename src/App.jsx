@@ -41,6 +41,16 @@ import {
   Plus,
   UserPlus2,
   UsersRound,
+  Pencil,
+  MessageSquareOff,
+  MessageSquare,
+  Pin,
+  PinOff,
+  Zap,
+  ZapOff,
+  ZoomIn,
+  SwitchCamera,
+  Circle,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import * as api from "./lib/api";
@@ -426,20 +436,56 @@ function MobileNav({ active, setActive }) {
 
 /* --------------------------------- Post ------------------------------------ */
 
-function PostMenu({ isOwn, onClose, onDelete }) {
+function PostMenu({ isOwn, post, onClose, onDelete, onStartEdit, onToggleComments, onTogglePin }) {
   return (
-    <div className="absolute right-3 top-11 z-20 w-44 rounded-md overflow-hidden shadow-lg" style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}` }}>
+    <div className="absolute right-3 top-11 z-20 w-52 rounded-md overflow-hidden shadow-lg animate-fade-slide-soft" style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}` }}>
       {isOwn ? (
-        <button
-          onClick={() => {
-            onDelete();
-            onClose();
-          }}
-          className="w-full text-left text-sm px-4 py-2.5"
-          style={{ color: "#E07A5F" }}
-        >
-          Gönderiyi sil
-        </button>
+        <>
+          <button
+            onClick={() => {
+              onStartEdit();
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 text-left text-sm px-4 py-2.5 press-scale"
+            style={{ color: COLORS.ivory }}
+          >
+            <Pencil size={15} />
+            Düzenle / Açıklamayı değiştir
+          </button>
+          <button
+            onClick={() => {
+              onToggleComments();
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 text-left text-sm px-4 py-2.5 press-scale"
+            style={{ color: COLORS.ivory, borderTop: `1px solid ${COLORS.border}` }}
+          >
+            {post.commentsEnabled === false ? <MessageSquare size={15} /> : <MessageSquareOff size={15} />}
+            {post.commentsEnabled === false ? "Yorumları aç" : "Yorumları kapat"}
+          </button>
+          <button
+            onClick={() => {
+              onTogglePin();
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 text-left text-sm px-4 py-2.5 press-scale"
+            style={{ color: COLORS.ivory, borderTop: `1px solid ${COLORS.border}` }}
+          >
+            {post.pinned ? <PinOff size={15} /> : <Pin size={15} />}
+            {post.pinned ? "Sabitlemeyi kaldır" : "Gönderiyi sabitle"}
+          </button>
+          <button
+            onClick={() => {
+              onDelete();
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 text-left text-sm px-4 py-2.5 press-scale"
+            style={{ color: "#E07A5F", borderTop: `1px solid ${COLORS.border}` }}
+          >
+            <Trash2 size={15} />
+            Gönderiyi sil
+          </button>
+        </>
       ) : (
         <button onClick={onClose} className="w-full text-left text-sm px-4 py-2.5" style={{ color: COLORS.ivory }}>
           Bildir
@@ -452,13 +498,37 @@ function PostMenu({ isOwn, onClose, onDelete }) {
   );
 }
 
-function Post({ post, currentUser, onToggleLike, onOpenProfile, onOpenComments, onDelete, commentCount }) {
+function Post({ post, currentUser, onToggleLike, onOpenProfile, onOpenComments, onDelete, onUpdatePost, commentCount }) {
   const liked = (post.likes || []).includes(currentUser.id);
   const [menuOpen, setMenuOpen] = useState(false);
   const [justLiked, setJustLiked] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [editingCaption, setEditingCaption] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState(post.caption || "");
+  const [savingCaption, setSavingCaption] = useState(false);
   const isOwn = post.userId === currentUser.id;
   const isVideo = post.mediaType === "video";
+
+  const saveCaption = async () => {
+    setSavingCaption(true);
+    try {
+      await onUpdatePost(post.id, { caption: captionDraft.trim() });
+      setEditingCaption(false);
+    } catch (err) {
+      console.error("Açıklama güncellenemedi", err);
+    }
+    setSavingCaption(false);
+  };
+
+  const handleToggleComments = () => {
+    onUpdatePost(post.id, { comments_enabled: post.commentsEnabled === false }).catch((err) =>
+      console.error("Yorum ayarı değiştirilemedi", err)
+    );
+  };
+
+  const handleTogglePin = () => {
+    onUpdatePost(post.id, { pinned: !post.pinned }).catch((err) => console.error("Sabitleme başarısız", err));
+  };
 
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}${window.location.pathname}#post-${post.id}`;
@@ -492,15 +562,59 @@ function Post({ post, currentUser, onToggleLike, onOpenProfile, onOpenComments, 
       <div className="flex items-center justify-between px-4 py-3">
         <button className="flex items-center gap-3 press-scale" onClick={() => onOpenProfile(post.userId)}>
           <Avatar name={post.username} size={32} avatarUrl={post.avatarUrl} />
-          <span className="text-sm font-semibold" style={{ color: COLORS.ivory }}>
+          <span className="text-sm font-semibold flex items-center gap-1.5" style={{ color: COLORS.ivory }}>
             {post.username}
+            {post.pinned && <Pin size={12} color={COLORS.bronzeSoft} fill={COLORS.bronzeSoft} />}
           </span>
         </button>
         <button onClick={() => setMenuOpen((v) => !v)} className="press-scale">
           <MoreHorizontal size={20} color={COLORS.muted} />
         </button>
-        {menuOpen && <PostMenu isOwn={isOwn} onClose={() => setMenuOpen(false)} onDelete={() => onDelete(post.id)} />}
+        {menuOpen && (
+          <PostMenu
+            isOwn={isOwn}
+            post={post}
+            onClose={() => setMenuOpen(false)}
+            onDelete={() => onDelete(post.id)}
+            onStartEdit={() => {
+              setCaptionDraft(post.caption || "");
+              setEditingCaption(true);
+            }}
+            onToggleComments={handleToggleComments}
+            onTogglePin={handleTogglePin}
+          />
+        )}
       </div>
+      {editingCaption && (
+        <div className="px-4 pb-3 animate-fade-slide-soft">
+          <textarea
+            value={captionDraft}
+            onChange={(e) => setCaptionDraft(e.target.value)}
+            rows={2}
+            autoFocus
+            placeholder="Açıklama yaz..."
+            className="w-full text-sm px-3 py-2 rounded-md resize-none focus:outline-none"
+            style={{ background: COLORS.surfaceAlt, color: COLORS.ivory, border: `1px solid ${COLORS.border}` }}
+          />
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={saveCaption}
+              disabled={savingCaption}
+              className="text-xs font-semibold px-4 py-1.5 rounded-md press-scale disabled:opacity-50"
+              style={{ background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }}
+            >
+              {savingCaption ? "Kaydediliyor..." : "Kaydet"}
+            </button>
+            <button
+              onClick={() => setEditingCaption(false)}
+              className="text-xs font-medium px-4 py-1.5 rounded-md press-scale"
+              style={{ border: `1px solid ${COLORS.border}`, color: COLORS.muted }}
+            >
+              Vazgeç
+            </button>
+          </div>
+        </div>
+      )}
       {post.image && (
         <div className="relative w-full aspect-square" style={{ background: "#000" }} onDoubleClick={handleLikeClick}>
           {isVideo ? (
@@ -537,9 +651,13 @@ function Post({ post, currentUser, onToggleLike, onOpenProfile, onOpenComments, 
           <button onClick={handleLikeClick} className="press-scale">
             <Heart size={22} color={liked ? "#E07A5F" : COLORS.ivory} fill={liked ? "#E07A5F" : "none"} className="transition-transform" />
           </button>
-          <button onClick={() => onOpenComments(post)} className="press-scale">
-            <MessageCircle size={22} color={COLORS.ivory} />
-          </button>
+          {post.commentsEnabled !== false ? (
+            <button onClick={() => onOpenComments(post)} className="press-scale">
+              <MessageCircle size={22} color={COLORS.ivory} />
+            </button>
+          ) : (
+            <MessageSquareOff size={20} color={COLORS.muted} />
+          )}
           <button onClick={handleShare} className="press-scale">
             <Send size={20} color={COLORS.ivory} />
           </button>
@@ -547,16 +665,22 @@ function Post({ post, currentUser, onToggleLike, onOpenProfile, onOpenComments, 
         <p className="text-sm font-semibold mb-1" style={{ color: COLORS.ivory }}>
           {(post.likes || []).length} beğenme
         </p>
-        {post.caption && (
+        {!editingCaption && post.caption && (
           <p className="text-sm" style={{ color: COLORS.ivory }}>
             <span className="font-semibold mr-1">{post.username}</span>
             {post.caption}
           </p>
         )}
-        {commentCount > 0 && (
-          <button onClick={() => onOpenComments(post)} className="text-sm mt-1" style={{ color: COLORS.muted }}>
-            {commentCount} yorumun tümünü gör
-          </button>
+        {post.commentsEnabled === false ? (
+          <p className="text-xs mt-1" style={{ color: COLORS.muted }}>
+            Yorumlar kapalı
+          </p>
+        ) : (
+          commentCount > 0 && (
+            <button onClick={() => onOpenComments(post)} className="text-sm mt-1" style={{ color: COLORS.muted }}>
+              {commentCount} yorumun tümünü gör
+            </button>
+          )
         )}
         <p className="text-[11px] mt-1 uppercase tracking-wide" style={{ color: COLORS.muted }}>
           {post.time}
@@ -582,7 +706,7 @@ function EmptyState({ icon: Icon, title, subtitle }) {
   );
 }
 
-function Feed({ loading, posts, currentUser, onToggleLike, onOpenProfile, onOpenComments, onDelete }) {
+function Feed({ loading, posts, currentUser, onToggleLike, onOpenProfile, onOpenComments, onDelete, onUpdatePost }) {
   return (
     <div className="max-w-lg mx-auto py-6 px-4">
       {loading ? (
@@ -599,6 +723,7 @@ function Feed({ loading, posts, currentUser, onToggleLike, onOpenProfile, onOpen
               onOpenProfile={onOpenProfile}
               onOpenComments={onOpenComments}
               onDelete={onDelete}
+              onUpdatePost={onUpdatePost}
               commentCount={post.commentCount || 0}
             />
           </div>
@@ -640,6 +765,9 @@ function CommentsModal({ post, currentUser, onClose, onCommentAdded }) {
       onCommentAdded?.();
     } catch (err) {
       console.error("Yorum eklenemedi", err);
+      if (err?.code === "42501" || err?.code === "PGRST301") {
+        alert("Bu gönderinin sahibi yorumları kapatmış.");
+      }
     }
     setSending(false);
   };
@@ -722,6 +850,10 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
   const [error, setError] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [flashOn, setFlashOn] = useState(false);
+  const [flashSupported, setFlashSupported] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [zoomCaps, setZoomCaps] = useState(null); // { min, max, step } | null
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -732,12 +864,18 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
     let cancelled = false;
     setReady(false);
     setError("");
+    setFlashOn(false);
+    setFlashSupported(false);
+    setZoomCaps(null);
+    setZoom(1);
     stopStream();
 
     (async () => {
       try {
+        // Kamera + mikrofon izinlerini tarayıcıdan otomatik ister (izin
+        // istemi getUserMedia çağrısıyla tetiklenir, ekstra bir adım gerekmez).
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode },
+          video: { facingMode, width: { ideal: 1280 }, height: { ideal: 1280 } },
           audio: true,
         });
         if (cancelled) {
@@ -748,6 +886,20 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => {});
+        }
+        // Flash (torch) ve zoom desteğini cihaz/tarayıcıdan kontrol et.
+        // Her tarayıcı/cihaz desteklemez (özellikle iOS Safari) — desteklenmediğinde
+        // ilgili kontrol arayüzde gösterilmez.
+        try {
+          const track = stream.getVideoTracks()[0];
+          const caps = track.getCapabilities?.() || {};
+          setFlashSupported(!!caps.torch);
+          if (caps.zoom) {
+            setZoomCaps({ min: caps.zoom.min ?? 1, max: caps.zoom.max ?? 1, step: caps.zoom.step ?? 0.1 });
+            setZoom(track.getSettings?.().zoom || caps.zoom.min || 1);
+          }
+        } catch {
+          // capabilities API'si yoksa sessizce geç
         }
         setReady(true);
       } catch (err) {
@@ -761,6 +913,32 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
       stopStream();
     };
   }, [facingMode, stopStream]);
+
+  const toggleFlash = useCallback(async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track || !flashSupported) return;
+    const next = !flashOn;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next }] });
+      setFlashOn(next);
+    } catch (err) {
+      console.error("Flaş değiştirilemedi", err);
+    }
+  }, [flashOn, flashSupported]);
+
+  const applyZoom = useCallback(
+    async (value) => {
+      const track = streamRef.current?.getVideoTracks()[0];
+      if (!track || !zoomCaps) return;
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: value }] });
+        setZoom(value);
+      } catch (err) {
+        console.error("Yakınlaştırma uygulanamadı", err);
+      }
+    },
+    [zoomCaps]
+  );
 
   useEffect(() => () => clearInterval(tickRef.current), []);
 
@@ -874,13 +1052,13 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
             </span>
           </div>
         )}
-        <button
-          onClick={() => setFacingMode((m) => (m === "user" ? "environment" : "user"))}
-          className="p-2 rounded-full press-scale glass"
-          disabled={isRecording}
-        >
-          <RotateCcw size={20} color="#fff" />
-        </button>
+        {flashSupported ? (
+          <button onClick={toggleFlash} className="p-2 rounded-full press-scale glass" disabled={isRecording}>
+            {flashOn ? <Zap size={20} color="#F4C95D" fill="#F4C95D" /> : <ZapOff size={20} color="#fff" />}
+          </button>
+        ) : (
+          <div style={{ width: 36 }} />
+        )}
       </div>
 
       <div className="flex-1 relative flex items-center justify-center overflow-hidden">
@@ -906,12 +1084,31 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
                 <Spinner />
               </div>
             )}
+            {ready && zoomCaps && zoomCaps.max > zoomCaps.min && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-2 rounded-full glass">
+                <ZoomIn size={14} color="#fff" />
+                <input
+                  type="range"
+                  min={zoomCaps.min}
+                  max={zoomCaps.max}
+                  step={zoomCaps.step || 0.1}
+                  value={zoom}
+                  onChange={(e) => applyZoom(parseFloat(e.target.value))}
+                  className="w-28 accent-[#E07A5F]"
+                />
+                <span className="text-[11px] text-white tabular-nums w-8">{zoom.toFixed(1)}x</span>
+              </div>
+            )}
           </>
         )}
       </div>
 
       <div className="relative z-10 flex items-center justify-between px-8 pb-10 pt-5">
-        <button onClick={() => fileInput.current?.click()} className="p-3 rounded-xl press-scale glass flex flex-col items-center gap-1">
+        <button
+          onClick={() => fileInput.current?.click()}
+          className="p-3 rounded-xl press-scale glass flex flex-col items-center gap-1"
+          aria-label="Galeriden seç"
+        >
           <ImageIcon size={22} color="#fff" />
         </button>
         <input ref={fileInput} type="file" accept="image/*,video/*" onChange={handleGalleryFile} className="hidden" />
@@ -925,25 +1122,39 @@ function CameraView({ onCapturePhoto, onCaptureVideo, onPickFromGallery, onClose
           disabled={!ready}
           className="rounded-full flex items-center justify-center press-scale disabled:opacity-40"
           style={{
-            width: 76,
-            height: 76,
+            width: 84,
+            height: 84,
             background: "transparent",
             border: `4px solid #fff`,
             padding: 5,
           }}
+          aria-label="Başlat"
         >
           <span
-            className={`rounded-full transition-all duration-200 ${isRecording ? "animate-record-pulse" : ""}`}
+            className={`rounded-full flex items-center justify-center transition-all duration-200 ${
+              isRecording ? "animate-record-pulse" : ""
+            }`}
             style={{
-              width: isRecording ? 30 : "100%",
-              height: isRecording ? 30 : "100%",
+              width: isRecording ? 32 : "100%",
+              height: isRecording ? 32 : "100%",
               borderRadius: isRecording ? 8 : 999,
               background: "#E07A5F",
             }}
-          />
+          >
+            {!isRecording && (
+              <span className="text-[10px] font-bold tracking-wide text-white uppercase">Başlat</span>
+            )}
+          </span>
         </button>
 
-        <div style={{ width: 48 }} />
+        <button
+          onClick={() => setFacingMode((m) => (m === "user" ? "environment" : "user"))}
+          className="p-3 rounded-xl press-scale glass flex flex-col items-center gap-1"
+          disabled={isRecording}
+          aria-label="Kamera değiştir"
+        >
+          <SwitchCamera size={22} color="#fff" />
+        </button>
       </div>
       <p className="text-center text-[11px] pb-4 -mt-6" style={{ color: "rgba(255,255,255,0.55)" }}>
         {isRecording ? "Bırakınca kaydı bitir" : "Fotoğraf için dokun, video için basılı tut"}
@@ -1938,69 +2149,94 @@ function ManageAccountsPage({ savedAccounts, currentUser, onBack, onRemove }) {
   );
 }
 
-/* ------------------------------- Follow list --------------------------------- */
+/* ------------------------------- Follow list (tam sayfa) --------------------------------- */
 
-function FollowListModal({ title, userIds, users, currentUser, follows, onToggleFollow, onOpenProfile, onClose }) {
-  const list = userIds.map((id) => users.find((u) => u.id === id)).filter(Boolean);
+// Takipçi / Takip edilen listesi artık bir modal değil, kendi rotası olan tam
+// bir sayfa. `follows` prop'u App'teki global realtime aboneliği tarafından
+// canlı tutulduğu için bu sayfa da her `follows` değişiminde otomatik olarak
+// güncel listeyi gösterir (ekstra bir subscription açmaya gerek yok).
+function FollowListPage({ title, userIds, users, currentUser, follows, onToggleFollow, onOpenProfile, onBack }) {
+  const [query, setQuery] = useState("");
+
+  const list = useMemo(() => {
+    const base = userIds.map((id) => users.find((u) => u.id === id)).filter(Boolean);
+    if (!query.trim()) return base;
+    const q = query.trim().toLowerCase();
+    return base.filter(
+      (u) => u.username?.toLowerCase().includes(q) || u.full_name?.toLowerCase().includes(q)
+    );
+  }, [userIds, users, query]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center animate-scrim" style={{ background: "rgba(15,27,45,0.7)" }} onClick={onClose}>
-      <div
-        className="w-full md:max-w-sm max-h-[75vh] flex flex-col rounded-t-2xl md:rounded-lg overflow-hidden animate-modal-rise glass-strong"
-        style={{ border: `1px solid ${COLORS.border}` }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-          <span className="text-sm font-semibold" style={{ color: COLORS.ivory }}>
-            {title}
-          </span>
-          <button onClick={onClose} className="press-scale">
-            <X size={18} color={COLORS.muted} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-2 py-2">
-          {list.length === 0 ? (
-            <p className="text-sm text-center py-10" style={{ color: COLORS.muted }}>
-              Henüz kimse yok.
-            </p>
-          ) : (
-            list.map((u) => {
-              const isFollowing = follows.some((f) => f.follower_id === currentUser.id && f.following_id === u.id);
-              const isSelf = u.id === currentUser.id;
-              return (
-                <div key={u.id} className="flex items-center justify-between px-2 py-2.5 rounded-lg animate-fade-slide-soft">
-                  <button
-                    className="flex items-center gap-3 press-scale"
-                    onClick={() => {
-                      onOpenProfile(u.id);
-                      onClose();
-                    }}
-                  >
-                    <Avatar name={u.username} size={40} avatarUrl={u.avatar_url} />
-                    <span className="text-sm font-medium" style={{ color: COLORS.ivory }}>
-                      {u.username}
-                    </span>
-                  </button>
-                  {!isSelf && (
-                    <button
-                      onClick={() => onToggleFollow(u.id, isFollowing)}
-                      className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md press-scale transition-colors"
-                      style={
-                        isFollowing
-                          ? { background: COLORS.surfaceAlt, color: COLORS.muted, border: `1px solid ${COLORS.border}` }
-                          : { background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }
-                      }
-                    >
-                      {isFollowing ? <UserCheck size={13} /> : <UserPlus size={13} />}
-                      {isFollowing ? "Takiptesin" : "Takip et"}
-                    </button>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
+    <div className="max-w-lg mx-auto py-6 px-4 animate-fade-slide">
+      <div className="flex items-center gap-3 mb-4">
+        <button onClick={onBack} className="p-1.5 -ml-1.5 press-scale" aria-label="Geri">
+          <ArrowLeft size={20} color={COLORS.ivory} />
+        </button>
+        <h2 className="text-base font-semibold" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
+          {title}
+        </h2>
+        <span className="text-xs" style={{ color: COLORS.muted }}>
+          ({userIds.length})
+        </span>
       </div>
+
+      <div className="relative mb-4">
+        <Search size={16} color={COLORS.muted} className="absolute left-3 top-1/2 -translate-y-1/2" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Kullanıcı ara..."
+          className="w-full text-sm pl-9 pr-3 py-2.5 rounded-lg focus:outline-none"
+          style={{ background: COLORS.surfaceAlt, color: COLORS.ivory, border: `1px solid ${COLORS.border}` }}
+        />
+      </div>
+
+      {list.length === 0 ? (
+        <EmptyState icon={UsersRound} title={query ? "Sonuç bulunamadı" : "Henüz kimse yok"} />
+      ) : (
+        <div className="flex flex-col">
+          {list.map((u, i) => {
+            const isFollowing = follows.some((f) => f.follower_id === currentUser.id && f.following_id === u.id);
+            const isSelf = u.id === currentUser.id;
+            return (
+              <div
+                key={u.id}
+                className="flex items-center justify-between py-2.5 animate-fade-slide-soft"
+                style={{ borderBottom: `1px solid ${COLORS.border}`, animationDelay: `${Math.min(i, 10) * 0.03}s` }}
+              >
+                <button className="flex items-center gap-3 press-scale min-w-0" onClick={() => onOpenProfile(u.id)}>
+                  <Avatar name={u.username} size={44} avatarUrl={u.avatar_url} />
+                  <div className="text-left min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: COLORS.ivory }}>
+                      {u.username}
+                    </p>
+                    {u.full_name && (
+                      <p className="text-xs truncate" style={{ color: COLORS.muted }}>
+                        {u.full_name}
+                      </p>
+                    )}
+                  </div>
+                </button>
+                {!isSelf && (
+                  <button
+                    onClick={() => onToggleFollow(u.id, isFollowing)}
+                    className="flex items-center gap-1 text-xs font-semibold px-3.5 py-1.5 rounded-md press-scale transition-colors shrink-0"
+                    style={
+                      isFollowing
+                        ? { background: COLORS.surfaceAlt, color: COLORS.muted, border: `1px solid ${COLORS.border}` }
+                        : { background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }
+                    }
+                  >
+                    {isFollowing ? <UserCheck size={13} /> : <UserPlus size={13} />}
+                    {isFollowing ? "Takiptesin" : "Takip et"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -2022,12 +2258,19 @@ function Profile({
   onBack,
   onOpenProfile,
   onBlockUser,
+  onOpenFollowList,
   postsLoading,
 }) {
-  const [listModal, setListModal] = useState(null); // null | 'followers' | 'following'
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
-  const mine = useMemo(() => posts.filter((p) => p.userId === profileUser.id), [posts, profileUser.id]);
+  const mine = useMemo(
+    () =>
+      posts
+        .filter((p) => p.userId === profileUser.id)
+        .slice()
+        .sort((a, b) => (b.pinned === a.pinned ? 0 : b.pinned ? 1 : -1)),
+    [posts, profileUser.id]
+  );
   const totalLikes = useMemo(() => mine.reduce((sum, p) => sum + (p.likes?.length || 0), 0), [mine]);
 
   const followerIds = useMemo(
@@ -2131,7 +2374,7 @@ function Profile({
               Gönderi
             </p>
           </div>
-          <button className="text-center press-scale" onClick={() => setListModal("followers")}>
+          <button className="text-center press-scale" onClick={() => onOpenFollowList(profileUser.id, "followers")}>
             <p className="text-base font-bold" style={{ color: COLORS.ivory }}>
               {followerIds.length}
             </p>
@@ -2139,7 +2382,7 @@ function Profile({
               Takipçi
             </p>
           </button>
-          <button className="text-center press-scale" onClick={() => setListModal("following")}>
+          <button className="text-center press-scale" onClick={() => onOpenFollowList(profileUser.id, "following")}>
             <p className="text-base font-bold" style={{ color: COLORS.ivory }}>
               {followingIds.length}
             </p>
@@ -2223,25 +2466,14 @@ function Profile({
                   <Play size={13} color="#fff" fill="#fff" />
                 </div>
               )}
+              {post.pinned && (
+                <div className="absolute top-1.5 left-1.5">
+                  <Pin size={13} color="#fff" fill="#fff" />
+                </div>
+              )}
             </div>
           ))}
         </div>
-      )}
-
-      {listModal && (
-        <FollowListModal
-          title={listModal === "followers" ? "Takipçiler" : "Takip edilenler"}
-          userIds={listModal === "followers" ? followerIds : followingIds}
-          users={users}
-          currentUser={currentUser}
-          follows={follows}
-          onToggleFollow={onToggleFollow}
-          onOpenProfile={(id) => {
-            onOpenProfile(id);
-            setListModal(null);
-          }}
-          onClose={() => setListModal(null)}
-        />
       )}
     </div>
   );
@@ -2381,6 +2613,7 @@ export default function Meydan() {
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [openChatId, setOpenChatId] = useState(null);
   const [viewingUserId, setViewingUserId] = useState(null); // null => kendi profilim
+  const [followListView, setFollowListView] = useState(null); // { userId, type: 'followers'|'following' } | null
   const [commentsPost, setCommentsPost] = useState(null);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
@@ -2465,7 +2698,7 @@ export default function Meydan() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, () => {
         refreshUsers();
       })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, () => {
         refreshPosts();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "likes" }, () => {
@@ -2537,6 +2770,31 @@ export default function Meydan() {
     }
   };
 
+  const handleUpdatePost = async (postId, updates) => {
+    // İyimser güncelleme
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              ...(updates.caption !== undefined ? { caption: updates.caption } : {}),
+              ...(updates.comments_enabled !== undefined ? { commentsEnabled: updates.comments_enabled } : {}),
+              ...(updates.pinned !== undefined ? { pinned: updates.pinned } : {}),
+            }
+          : updates.pinned && p.userId === user.id
+          ? { ...p, pinned: false } // aynı kullanıcının diğer gönderileri sabitlenmiş olabilir, arayüzde tek sabit gösterelim
+          : p
+      )
+    );
+    try {
+      await api.updatePost(postId, user.id, updates);
+    } catch (err) {
+      console.error("Gönderi güncellenemedi", err);
+      refreshPosts();
+      throw err;
+    }
+  };
+
   const blockedIds = useMemo(() => new Set(blockedUsers.map((b) => b.id)), [blockedUsers]);
   const visiblePosts = useMemo(() => posts.filter((p) => !blockedIds.has(p.userId)), [posts, blockedIds]);
 
@@ -2545,6 +2803,11 @@ export default function Meydan() {
     // profile giriliyorsa alt menüde geldiğin sekme vurgulu kalmaya devam eder.
     setViewingUserId(userId === user.id ? null : userId);
     setActive("profile");
+  };
+
+  const openFollowList = (userId, type) => {
+    setFollowListView({ userId, type });
+    setActive("followList");
   };
 
   const openOwnProfileTab = () => {
@@ -2676,6 +2939,7 @@ export default function Meydan() {
               onOpenProfile={openProfile}
               onOpenComments={setCommentsPost}
               onDelete={handleDeletePost}
+              onUpdatePost={handleUpdatePost}
             />
           )}
           {active === "new" && <CreatePost user={user} onCreated={refreshPosts} goTo={setActive} />}
@@ -2706,7 +2970,32 @@ export default function Meydan() {
               onBack={() => setViewingUserId(null)}
               onOpenProfile={openProfile}
               onBlockUser={handleBlockUser}
+              onOpenFollowList={openFollowList}
               postsLoading={loadingPosts}
+            />
+          )}
+          {active === "followList" && followListView && (
+            <FollowListPage
+              title={followListView.type === "followers" ? "Takipçiler" : "Takip edilenler"}
+              userIds={follows
+                .filter((f) =>
+                  followListView.type === "followers"
+                    ? f.following_id === followListView.userId
+                    : f.follower_id === followListView.userId
+                )
+                .map((f) => (followListView.type === "followers" ? f.follower_id : f.following_id))}
+              users={users}
+              currentUser={user}
+              follows={follows}
+              onToggleFollow={toggleFollow}
+              onOpenProfile={(id) => {
+                setFollowListView(null);
+                openProfile(id);
+              }}
+              onBack={() => {
+                setFollowListView(null);
+                setActive("profile");
+              }}
             />
           )}
           {active === "messages" && (
