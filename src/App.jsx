@@ -24,9 +24,27 @@ import {
   Play,
   Volume2,
   VolumeX,
+  ChevronRight,
+  ChevronDown,
+  LogOut,
+  Trash2,
+  Shield,
+  Bell,
+  Lock,
+  HelpCircle,
+  Info,
+  UserX,
+  Phone,
+  Mail,
+  KeyRound,
+  Check,
+  Plus,
+  UserPlus2,
+  UsersRound,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import * as api from "./lib/api";
+import * as accountsStore from "./lib/accounts";
 
 /* ------------------------------------------------------------------
    MEYDAN — "town square"
@@ -1196,18 +1214,29 @@ function Discover({ posts, users, currentUser, follows, onToggleFollow, onOpenCh
 
 function EditProfileModal({ user, onClose, onSaved }) {
   const [username, setUsername] = useState(user.username || "");
+  const [fullName, setFullName] = useState(user.full_name || "");
   const [bio, setBio] = useState(user.bio || "");
   const [avatarPreview, setAvatarPreview] = useState(user.avatar_url || null);
   const [avatarFile, setAvatarFile] = useState(null);
+  const [coverPreview, setCoverPreview] = useState(user.cover_url || null);
+  const [coverFile, setCoverFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const fileInput = useRef(null);
+  const coverInput = useRef(null);
 
   const handleAvatarPick = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setAvatarFile(f);
     setAvatarPreview(URL.createObjectURL(f));
+  };
+
+  const handleCoverPick = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setCoverFile(f);
+    setCoverPreview(URL.createObjectURL(f));
   };
 
   const handleSave = async () => {
@@ -1222,7 +1251,17 @@ function EditProfileModal({ user, onClose, onSaved }) {
       if (avatarFile) {
         avatar_url = await api.uploadAvatar(user.id, avatarFile);
       }
-      const updated = await api.updateProfile(user.id, { username: username.trim(), bio: bio.trim(), avatar_url });
+      let cover_url = user.cover_url || null;
+      if (coverFile) {
+        cover_url = await api.uploadCover(user.id, coverFile);
+      }
+      const updated = await api.updateProfile(user.id, {
+        username: username.trim(),
+        full_name: fullName.trim(),
+        bio: bio.trim(),
+        avatar_url,
+        cover_url,
+      });
       onSaved(updated);
       onClose();
     } catch (err) {
@@ -1235,11 +1274,11 @@ function EditProfileModal({ user, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center animate-scrim" style={{ background: "rgba(15,27,45,0.7)" }} onClick={onClose}>
       <div
-        className="w-full md:max-w-sm rounded-t-2xl md:rounded-lg overflow-hidden animate-modal-rise glass-strong"
+        className="w-full md:max-w-sm rounded-t-2xl md:rounded-lg overflow-hidden animate-modal-rise glass-strong max-h-[90vh] overflow-y-auto"
         style={{ border: `1px solid ${COLORS.border}` }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+        <div className="flex items-center justify-between px-4 py-3 sticky top-0 z-10" style={{ borderBottom: `1px solid ${COLORS.border}`, background: COLORS.surface }}>
           <span className="text-sm font-semibold" style={{ color: COLORS.ivory }}>
             Profili düzenle
           </span>
@@ -1247,13 +1286,30 @@ function EditProfileModal({ user, onClose, onSaved }) {
             Kapat
           </button>
         </div>
-        <div className="p-5 flex flex-col gap-4">
+
+        <button
+          onClick={() => coverInput.current?.click()}
+          className="relative w-full h-28 block press-scale"
+          style={{ background: coverPreview ? `url(${coverPreview}) center/cover no-repeat` : COLORS.surfaceAlt }}
+        >
+          {!coverPreview && (
+            <span className="absolute inset-0 flex items-center justify-center text-xs font-medium" style={{ color: COLORS.muted }}>
+              Kapak fotoğrafı ekle
+            </span>
+          )}
+          <span className="absolute bottom-2 right-2 text-[11px] font-semibold px-2 py-1 rounded-md" style={{ background: "rgba(15,27,45,0.75)", color: COLORS.ivory }}>
+            Değiştir
+          </span>
+        </button>
+        <input ref={coverInput} type="file" accept="image/*" onChange={handleCoverPick} className="hidden" />
+
+        <div className="p-5 flex flex-col gap-4 -mt-8">
           <div className="flex flex-col items-center gap-2">
-            <button onClick={() => fileInput.current?.click()}>
+            <button onClick={() => fileInput.current?.click()} className="press-scale" style={{ border: `3px solid ${COLORS.surface}`, borderRadius: "9999px" }}>
               <Avatar name={username || "?"} size={72} avatarUrl={avatarPreview} />
             </button>
             <button onClick={() => fileInput.current?.click()} className="text-xs font-semibold" style={{ color: COLORS.bronzeSoft }}>
-              Fotoğrafı değiştir
+              Profil fotoğrafını değiştir
             </button>
             <input ref={fileInput} type="file" accept="image/*" onChange={handleAvatarPick} className="hidden" />
           </div>
@@ -1264,6 +1320,18 @@ function EditProfileModal({ user, onClose, onSaved }) {
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              className="w-full text-sm px-3 py-2.5 rounded-md focus:outline-none"
+              style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, color: COLORS.ivory }}
+            />
+          </div>
+          <div>
+            <label className="text-xs mb-1 block" style={{ color: COLORS.muted }}>
+              Ad soyad
+            </label>
+            <input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Adın ve soyadın"
               className="w-full text-sm px-3 py-2.5 rounded-md focus:outline-none"
               style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, color: COLORS.ivory }}
             />
@@ -1297,6 +1365,576 @@ function EditProfileModal({ user, onClose, onSaved }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* -------------------------------- Settings ----------------------------------- */
+
+function SettingsRow({ icon: Icon, label, danger, subtitle, onClick, right }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-3 px-4 py-3.5 press-scale text-left"
+      style={{ borderBottom: `1px solid ${COLORS.border}` }}
+    >
+      <Icon size={18} color={danger ? "#E07A5F" : COLORS.muted} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate" style={{ color: danger ? "#E07A5F" : COLORS.ivory }}>
+          {label}
+        </p>
+        {subtitle && (
+          <p className="text-xs mt-0.5 truncate" style={{ color: COLORS.muted }}>
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {right !== undefined ? right : <ChevronRight size={16} color={COLORS.muted} />}
+    </button>
+  );
+}
+
+function SettingsSection({ title, children }) {
+  return (
+    <div className="mb-6">
+      {title && (
+        <p className="text-[11px] font-semibold uppercase tracking-wide px-4 mb-1.5" style={{ color: COLORS.muted }}>
+          {title}
+        </p>
+      )}
+      <div className="rounded-lg overflow-hidden" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SettingsSubpage({ title, onBack, children }) {
+  return (
+    <div className="max-w-lg mx-auto py-4 px-4 animate-fade-slide">
+      <div className="flex items-center gap-3 mb-5">
+        <button onClick={onBack} className="press-scale p-1 -ml-1">
+          <ArrowLeft size={20} color={COLORS.ivory} />
+        </button>
+        <h2 className="text-base font-semibold" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
+          {title}
+        </h2>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ToggleSwitch({ checked, onChange, disabled }) {
+  return (
+    <button
+      onClick={() => !disabled && onChange(!checked)}
+      disabled={disabled}
+      className="relative w-11 h-6 rounded-full transition-colors duration-200 press-scale disabled:opacity-60"
+      style={{ background: checked ? COLORS.bronze : COLORS.border }}
+    >
+      <span
+        className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-200"
+        style={{ transform: checked ? "translateX(22px)" : "translateX(2px)" }}
+      />
+    </button>
+  );
+}
+
+function SettingsTextField({ label, ...props }) {
+  return (
+    <div className="mb-4">
+      <label className="text-xs mb-1 block" style={{ color: COLORS.muted }}>
+        {label}
+      </label>
+      <input
+        {...props}
+        className="w-full text-sm px-3 py-2.5 rounded-md focus:outline-none"
+        style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, color: COLORS.ivory }}
+      />
+    </div>
+  );
+}
+
+function SettingsSaveButton({ busy, onClick, label = "Kaydet" }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      className="w-full text-sm font-semibold py-2.5 rounded-md disabled:opacity-40 flex items-center justify-center gap-2"
+      style={{ background: `linear-gradient(90deg, ${COLORS.bronze}, ${COLORS.bronzeSoft})`, color: "#241608" }}
+    >
+      {busy && <Spinner />}
+      {label}
+    </button>
+  );
+}
+
+function PasswordSettings({ onBack }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const handleSave = async () => {
+    if (password.length < 6) return setMsg({ error: true, text: "Şifre en az 6 karakter olmalı." });
+    if (password !== confirm) return setMsg({ error: true, text: "Şifreler eşleşmiyor." });
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.changePassword(password);
+      setMsg({ error: false, text: "Şifren güncellendi." });
+      setPassword("");
+      setConfirm("");
+    } catch (err) {
+      setMsg({ error: true, text: err?.message || "Şifre güncellenemedi." });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <SettingsSubpage title="Şifre değiştir" onBack={onBack}>
+      <SettingsTextField label="Yeni şifre" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <SettingsTextField label="Yeni şifre (tekrar)" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+      {msg && (
+        <p className="text-xs mb-3" style={{ color: msg.error ? "#E07A5F" : "#7FB88A" }}>
+          {msg.text}
+        </p>
+      )}
+      <SettingsSaveButton busy={busy} onClick={handleSave} />
+    </SettingsSubpage>
+  );
+}
+
+function EmailSettings({ user, onBack }) {
+  const [email, setEmail] = useState(user.email || "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const handleSave = async () => {
+    if (!email.includes("@")) return setMsg({ error: true, text: "Geçerli bir e-posta gir." });
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.changeEmail(email.trim());
+      setMsg({ error: false, text: "Onay bağlantısı yeni e-posta adresine gönderildi." });
+    } catch (err) {
+      setMsg({ error: true, text: err?.message || "E-posta güncellenemedi." });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <SettingsSubpage title="E-posta değiştir" onBack={onBack}>
+      <SettingsTextField label="E-posta adresi" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      {msg && (
+        <p className="text-xs mb-3" style={{ color: msg.error ? "#E07A5F" : "#7FB88A" }}>
+          {msg.text}
+        </p>
+      )}
+      <SettingsSaveButton busy={busy} onClick={handleSave} />
+    </SettingsSubpage>
+  );
+}
+
+function PhoneSettings({ user, onBack, onSaved }) {
+  const [phone, setPhone] = useState(user.phone || "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const handleSave = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const updated = await api.updatePhone(user.id, phone.trim());
+      onSaved(updated);
+      setMsg({ error: false, text: "Telefon numarası kaydedildi." });
+    } catch (err) {
+      setMsg({ error: true, text: err?.message || "Kaydedilemedi." });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <SettingsSubpage title="Telefon numarası" onBack={onBack}>
+      <SettingsTextField label="Telefon numarası" type="tel" placeholder="+90 5xx xxx xx xx" value={phone} onChange={(e) => setPhone(e.target.value)} />
+      {msg && (
+        <p className="text-xs mb-3" style={{ color: msg.error ? "#E07A5F" : "#7FB88A" }}>
+          {msg.text}
+        </p>
+      )}
+      <SettingsSaveButton busy={busy} onClick={handleSave} />
+    </SettingsSubpage>
+  );
+}
+
+function PrivacySettings({ user, onBack, onSaved }) {
+  const [isPrivate, setIsPrivate] = useState(!!user.is_private);
+  const [busy, setBusy] = useState(false);
+
+  const toggle = async (val) => {
+    setIsPrivate(val);
+    setBusy(true);
+    try {
+      const updated = await api.updateProfile(user.id, { is_private: val });
+      onSaved(updated);
+    } catch (err) {
+      console.error(err);
+      setIsPrivate(!val);
+    }
+    setBusy(false);
+  };
+
+  return (
+    <SettingsSubpage title="Gizlilik ayarları" onBack={onBack}>
+      <SettingsSection>
+        <div className="w-full flex items-center gap-3 px-4 py-3.5">
+          <Lock size={18} color={COLORS.muted} />
+          <div className="flex-1">
+            <p className="text-sm font-medium" style={{ color: COLORS.ivory }}>
+              Hesabı gizli yap
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: COLORS.muted }}>
+              Gizli hesaplarda gönderiler sadece onaylanan takipçilere görünür.
+            </p>
+          </div>
+          <ToggleSwitch checked={isPrivate} onChange={toggle} disabled={busy} />
+        </div>
+      </SettingsSection>
+    </SettingsSubpage>
+  );
+}
+
+function NotificationSettings({ user, onBack, onSaved }) {
+  const defaults = { likes: true, comments: true, follows: true, messages: true };
+  const [prefs, setPrefs] = useState({ ...defaults, ...(user.notification_prefs || {}) });
+  const [busy, setBusy] = useState(false);
+
+  const toggle = async (key, val) => {
+    const next = { ...prefs, [key]: val };
+    setPrefs(next);
+    setBusy(true);
+    try {
+      const updated = await api.updateProfile(user.id, { notification_prefs: next });
+      onSaved(updated);
+    } catch (err) {
+      console.error(err);
+      setPrefs(prefs);
+    }
+    setBusy(false);
+  };
+
+  const rows = [
+    { key: "likes", label: "Beğeniler" },
+    { key: "comments", label: "Yorumlar" },
+    { key: "follows", label: "Yeni takipçiler" },
+    { key: "messages", label: "Mesajlar" },
+  ];
+
+  return (
+    <SettingsSubpage title="Bildirim ayarları" onBack={onBack}>
+      <SettingsSection>
+        {rows.map((r, i) => (
+          <div
+            key={r.key}
+            className="w-full flex items-center gap-3 px-4 py-3.5"
+            style={{ borderBottom: i < rows.length - 1 ? `1px solid ${COLORS.border}` : "none" }}
+          >
+            <p className="flex-1 text-sm font-medium" style={{ color: COLORS.ivory }}>
+              {r.label}
+            </p>
+            <ToggleSwitch checked={!!prefs[r.key]} onChange={(v) => toggle(r.key, v)} disabled={busy} />
+          </div>
+        ))}
+      </SettingsSection>
+    </SettingsSubpage>
+  );
+}
+
+function SecuritySettings({ onBack, goTo, onLogout }) {
+  return (
+    <SettingsSubpage title="Güvenlik" onBack={onBack}>
+      <SettingsSection>
+        <SettingsRow icon={KeyRound} label="Şifreyi değiştir" onClick={() => goTo("password")} />
+        <SettingsRow icon={LogOut} label="Bu cihazdan çıkış yap" onClick={onLogout} />
+      </SettingsSection>
+      <p className="text-xs px-1" style={{ color: COLORS.muted }}>
+        İki adımlı doğrulama yakında eklenecek.
+      </p>
+    </SettingsSubpage>
+  );
+}
+
+function BlockedUsersSettings({ onBack, blockedUsers, onUnblock, loading }) {
+  return (
+    <SettingsSubpage title="Engellenen kullanıcılar" onBack={onBack}>
+      {loading ? (
+        <div className="flex justify-center py-10">
+          <Spinner />
+        </div>
+      ) : blockedUsers.length === 0 ? (
+        <EmptyState icon={UserX} title="Engellenen kullanıcı yok" />
+      ) : (
+        <SettingsSection>
+          {blockedUsers.map((u, i) => (
+            <div
+              key={u.id}
+              className="flex items-center gap-3 px-4 py-3"
+              style={{ borderBottom: i < blockedUsers.length - 1 ? `1px solid ${COLORS.border}` : "none" }}
+            >
+              <Avatar name={u.username} size={36} avatarUrl={u.avatarUrl} />
+              <p className="flex-1 text-sm font-medium truncate" style={{ color: COLORS.ivory }}>
+                {u.username}
+              </p>
+              <button
+                onClick={() => onUnblock(u.id)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-md press-scale"
+                style={{ border: `1px solid ${COLORS.border}`, color: COLORS.ivory }}
+              >
+                Kaldır
+              </button>
+            </div>
+          ))}
+        </SettingsSection>
+      )}
+    </SettingsSubpage>
+  );
+}
+
+function HelpSettings({ onBack }) {
+  return (
+    <SettingsSubpage title="Yardım ve Destek" onBack={onBack}>
+      <SettingsSection>
+        <div className="px-4 py-3.5 text-sm" style={{ color: COLORS.ivory }}>
+          Sorun mu yaşıyorsun? destek@meydan.app adresine e-posta gönder, en kısa sürede dönüş yapalım.
+        </div>
+      </SettingsSection>
+      <SettingsSection title="Sıkça sorulanlar">
+        <div className="px-4 py-3.5 text-sm" style={{ color: COLORS.muted }}>
+          Şifremi unuttum, hesabımı nasıl silerim, gizlilik ayarları hakkında sorularının çoğuna Ayarlar menüsünden ulaşabilirsin.
+        </div>
+      </SettingsSection>
+    </SettingsSubpage>
+  );
+}
+
+const APP_VERSION = "1.1.0";
+
+function AboutSettings({ onBack }) {
+  return (
+    <SettingsSubpage title="Hakkında" onBack={onBack}>
+      <div className="flex flex-col items-center text-center gap-3 py-6">
+        <Logo />
+        <p className="text-sm max-w-xs" style={{ color: COLORS.muted }}>
+          Meydan, çini mavisi ve pirinç tonlarıyla tasarlanmış bir "şehir meydanı" — paylaş, keşfet, bağlan.
+        </p>
+        <p className="text-xs" style={{ color: COLORS.muted }}>
+          Uygulama sürümü {APP_VERSION}
+        </p>
+      </div>
+    </SettingsSubpage>
+  );
+}
+
+function SettingsPage({ user, onBack, onEditProfile, onLogout, onDeleteAccount, onSaved, blockedUsers, blockedLoading, onUnblock, onLinkGoogle, onGoogleSignIn }) {
+  const [view, setView] = useState("root");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleteBusy(true);
+    try {
+      await onDeleteAccount();
+    } catch (err) {
+      console.error(err);
+      setDeleteBusy(false);
+    }
+  };
+
+  if (view === "password") return <PasswordSettings onBack={() => setView("root")} />;
+  if (view === "email") return <EmailSettings user={user} onBack={() => setView("root")} />;
+  if (view === "phone") return <PhoneSettings user={user} onBack={() => setView("root")} onSaved={onSaved} />;
+  if (view === "privacy") return <PrivacySettings user={user} onBack={() => setView("root")} onSaved={onSaved} />;
+  if (view === "notifications") return <NotificationSettings user={user} onBack={() => setView("root")} onSaved={onSaved} />;
+  if (view === "security") return <SecuritySettings onBack={() => setView("root")} goTo={setView} onLogout={onLogout} />;
+  if (view === "blocked")
+    return <BlockedUsersSettings onBack={() => setView("root")} blockedUsers={blockedUsers} loading={blockedLoading} onUnblock={onUnblock} />;
+  if (view === "help") return <HelpSettings onBack={() => setView("root")} />;
+  if (view === "about") return <AboutSettings onBack={() => setView("root")} />;
+
+  return (
+    <div className="max-w-lg mx-auto py-4 px-4 pb-10 animate-fade-slide">
+      <div className="flex items-center gap-3 mb-5">
+        <button onClick={onBack} className="press-scale p-1 -ml-1">
+          <ArrowLeft size={20} color={COLORS.ivory} />
+        </button>
+        <h2 className="text-lg font-semibold" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
+          Ayarlar
+        </h2>
+      </div>
+
+      <SettingsSection title="Hesap bilgileri">
+        <SettingsRow icon={User} label="Profili düzenle" subtitle="Kullanıcı adı, ad soyad, biyografi, fotoğraflar" onClick={onEditProfile} />
+        <SettingsRow icon={KeyRound} label="Şifre değiştir" onClick={() => setView("password")} />
+        <SettingsRow icon={Mail} label="E-posta değiştir" subtitle={user.email} onClick={() => setView("email")} />
+        <SettingsRow icon={Phone} label="Telefon numarası" subtitle={user.phone || "Eklenmedi"} onClick={() => setView("phone")} />
+        <SettingsRow icon={UserPlus2} label="Google hesabını bağla" onClick={onLinkGoogle} />
+        <SettingsRow icon={UserPlus2} label="Google ile giriş yap" onClick={onGoogleSignIn} />
+      </SettingsSection>
+
+      <SettingsSection title="Tercihler">
+        <SettingsRow icon={Lock} label="Gizlilik ayarları" onClick={() => setView("privacy")} />
+        <SettingsRow icon={Bell} label="Bildirim ayarları" onClick={() => setView("notifications")} />
+        <SettingsRow icon={Shield} label="Güvenlik ayarları" onClick={() => setView("security")} />
+        <SettingsRow icon={UserX} label="Engellenen kullanıcılar" onClick={() => setView("blocked")} />
+      </SettingsSection>
+
+      <SettingsSection title="Destek">
+        <SettingsRow icon={HelpCircle} label="Yardım ve Destek" onClick={() => setView("help")} />
+        <SettingsRow icon={Info} label="Hakkında" subtitle={`Sürüm ${APP_VERSION}`} onClick={() => setView("about")} />
+      </SettingsSection>
+
+      <SettingsSection>
+        <SettingsRow icon={LogOut} label="Çıkış Yap" onClick={onLogout} />
+        <SettingsRow icon={Trash2} label="Hesabı Sil" danger onClick={() => setConfirmDelete(true)} />
+      </SettingsSection>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-6 animate-scrim" style={{ background: "rgba(15,27,45,0.75)" }}>
+          <div className="w-full max-w-sm rounded-lg p-5 animate-modal-rise" style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
+            <p className="text-sm font-semibold mb-2" style={{ color: COLORS.ivory }}>
+              Hesabını silmek istediğine emin misin?
+            </p>
+            <p className="text-xs mb-4" style={{ color: COLORS.muted }}>
+              Bu işlem geri alınamaz. Tüm gönderilerin, yorumların ve mesajların kalıcı olarak silinir.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="flex-1 text-sm font-medium py-2 rounded-md press-scale"
+                style={{ border: `1px solid ${COLORS.border}`, color: COLORS.ivory }}
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleteBusy}
+                className="flex-1 text-sm font-semibold py-2 rounded-md press-scale disabled:opacity-40 flex items-center justify-center gap-2"
+                style={{ background: "#E07A5F", color: "#241608" }}
+              >
+                {deleteBusy && <Spinner />}
+                Sil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* --------------------------- Account switcher sheet --------------------------- */
+
+function AccountSwitcherSheet({ currentUser, savedAccounts, onClose, onSwitch, onAddAccount, onManage }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center animate-scrim" style={{ background: "rgba(15,27,45,0.7)" }} onClick={onClose}>
+      <div
+        className="w-full md:max-w-sm rounded-t-2xl overflow-hidden animate-modal-rise glass-strong"
+        style={{ border: `1px solid ${COLORS.border}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-center pt-2.5 pb-1">
+          <div className="w-9 h-1 rounded-full" style={{ background: COLORS.border }} />
+        </div>
+        <div className="px-4 py-2.5 text-center text-sm font-semibold" style={{ color: COLORS.ivory, borderBottom: `1px solid ${COLORS.border}` }}>
+          Hesaplar
+        </div>
+
+        <div className="max-h-[50vh] overflow-y-auto">
+          {savedAccounts.map((acc) => {
+            const isCurrent = acc.id === currentUser.id;
+            return (
+              <button
+                key={acc.id}
+                onClick={() => !isCurrent && onSwitch(acc)}
+                className="w-full flex items-center gap-3 px-4 py-3 press-scale"
+                style={{ borderBottom: `1px solid ${COLORS.border}` }}
+              >
+                <Avatar name={acc.username} size={40} avatarUrl={acc.avatar_url} />
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: COLORS.ivory }}>
+                    {acc.username}
+                  </p>
+                  {isCurrent && (
+                    <p className="text-xs" style={{ color: COLORS.muted }}>
+                      Mevcut hesap
+                    </p>
+                  )}
+                </div>
+                {isCurrent && <Check size={18} color={COLORS.bronzeSoft} />}
+              </button>
+            );
+          })}
+        </div>
+
+        <button onClick={onAddAccount} className="w-full flex items-center gap-3 px-4 py-3.5 press-scale" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+          <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ border: `1.5px dashed ${COLORS.border}` }}>
+            <Plus size={16} color={COLORS.muted} />
+          </div>
+          <span className="text-sm font-medium" style={{ color: COLORS.ivory }}>
+            Hesap ekle
+          </span>
+        </button>
+
+        <button onClick={onManage} className="w-full flex items-center gap-3 px-4 py-3.5 press-scale">
+          <UsersRound size={18} color={COLORS.muted} />
+          <span className="text-sm font-medium" style={{ color: COLORS.ivory }}>
+            Hesapları yönet
+          </span>
+        </button>
+
+        <div className="h-2" />
+      </div>
+    </div>
+  );
+}
+
+function ManageAccountsPage({ savedAccounts, currentUser, onBack, onRemove }) {
+  return (
+    <SettingsSubpage title="Hesapları yönet" onBack={onBack}>
+      <SettingsSection>
+        {savedAccounts.map((acc, i) => (
+          <div
+            key={acc.id}
+            className="flex items-center gap-3 px-4 py-3"
+            style={{ borderBottom: i < savedAccounts.length - 1 ? `1px solid ${COLORS.border}` : "none" }}
+          >
+            <Avatar name={acc.username} size={36} avatarUrl={acc.avatar_url} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate" style={{ color: COLORS.ivory }}>
+                {acc.username}
+              </p>
+              {acc.id === currentUser.id && (
+                <p className="text-xs" style={{ color: COLORS.muted }}>
+                  Mevcut hesap
+                </p>
+              )}
+            </div>
+            {acc.id !== currentUser.id && (
+              <button
+                onClick={() => onRemove(acc.id)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-md press-scale"
+                style={{ border: `1px solid ${COLORS.border}`, color: "#E07A5F" }}
+              >
+                Kaldır
+              </button>
+            )}
+          </div>
+        ))}
+      </SettingsSection>
+      <p className="text-xs px-1" style={{ color: COLORS.muted }}>
+        Bir hesabı kaldırmak sadece bu cihazdaki kayıtlı girişi siler, hesabı silmez.
+      </p>
+    </SettingsSubpage>
   );
 }
 
@@ -1369,8 +2007,25 @@ function FollowListModal({ title, userIds, users, currentUser, follows, onToggle
 
 /* --------------------------------- Profile ---------------------------------- */
 
-function Profile({ profileUser, isOwnProfile, posts, users, follows, currentUser, onToggleFollow, onEditProfile, onMessage, onBack, onOpenProfile, postsLoading }) {
+function Profile({
+  profileUser,
+  isOwnProfile,
+  posts,
+  users,
+  follows,
+  currentUser,
+  onToggleFollow,
+  onEditProfile,
+  onOpenSettings,
+  onSwitchAccount,
+  onMessage,
+  onBack,
+  onOpenProfile,
+  onBlockUser,
+  postsLoading,
+}) {
   const [listModal, setListModal] = useState(null); // null | 'followers' | 'following'
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const mine = useMemo(() => posts.filter((p) => p.userId === profileUser.id), [posts, profileUser.id]);
   const totalLikes = useMemo(() => mine.reduce((sum, p) => sum + (p.likes?.length || 0), 0), [mine]);
@@ -1387,17 +2042,76 @@ function Profile({ profileUser, isOwnProfile, posts, users, follows, currentUser
 
   return (
     <div className="max-w-3xl mx-auto py-8 px-4 animate-fade-slide">
-      {!isOwnProfile && (
-        <button onClick={onBack} className="flex items-center gap-1 text-sm mb-4 press-scale" style={{ color: COLORS.muted }}>
-          <ArrowLeft size={16} /> Geri
-        </button>
+      <div className="flex items-center justify-between mb-4">
+        {!isOwnProfile ? (
+          <button onClick={onBack} className="flex items-center gap-1 text-sm press-scale" style={{ color: COLORS.muted }}>
+            <ArrowLeft size={16} /> Geri
+          </button>
+        ) : (
+          <span />
+        )}
+        {isOwnProfile ? (
+          <button onClick={onOpenSettings} className="p-1.5 press-scale" aria-label="Ayarlar">
+            <Settings size={22} color={COLORS.ivory} />
+          </button>
+        ) : (
+          <div className="relative">
+            <button onClick={() => setShowProfileMenu((v) => !v)} className="p-1.5 press-scale" aria-label="Diğer seçenekler">
+              <MoreHorizontal size={20} color={COLORS.ivory} />
+            </button>
+            {showProfileMenu && (
+              <div
+                className="absolute right-0 top-9 z-20 w-48 rounded-md overflow-hidden shadow-lg"
+                style={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}` }}
+              >
+                <button
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onBlockUser(profileUser.id);
+                  }}
+                  className="w-full text-left text-sm px-4 py-2.5"
+                  style={{ color: "#E07A5F" }}
+                >
+                  Kullanıcıyı engelle
+                </button>
+                <button
+                  onClick={() => setShowProfileMenu(false)}
+                  className="w-full text-left text-sm px-4 py-2.5"
+                  style={{ color: COLORS.ivory, borderTop: `1px solid ${COLORS.border}` }}
+                >
+                  İptal
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {profileUser.cover_url && (
+        <div className="w-full h-32 rounded-lg overflow-hidden mb-[-2.5rem]" style={{ background: COLORS.surfaceAlt }}>
+          <img src={profileUser.cover_url} alt="" className="w-full h-full object-cover" />
+        </div>
       )}
 
       <div className="flex flex-col items-center text-center mb-6 animate-fade-slide-soft">
         <Avatar name={profileUser.username} size={96} avatarUrl={profileUser.avatar_url} />
-        <h2 className="text-xl font-semibold mt-3" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
-          {profileUser.username}
-        </h2>
+        {isOwnProfile ? (
+          <button onClick={onSwitchAccount} className="flex items-center gap-1 mt-3 press-scale">
+            <h2 className="text-xl font-semibold" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
+              {profileUser.username}
+            </h2>
+            <ChevronDown size={16} color={COLORS.muted} />
+          </button>
+        ) : (
+          <h2 className="text-xl font-semibold mt-3" style={{ color: COLORS.ivory, fontFamily: "Georgia, serif" }}>
+            {profileUser.username}
+          </h2>
+        )}
+        {profileUser.full_name && (
+          <p className="text-sm" style={{ color: COLORS.muted }}>
+            {profileUser.full_name}
+          </p>
+        )}
         {profileUser.bio ? (
           <p className="text-sm mt-1.5 max-w-sm" style={{ color: COLORS.ivory }}>
             {profileUser.bio}
@@ -1654,6 +2368,12 @@ export default function Meydan() {
   const [user, setUser] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [active, setActive] = useState("feed");
+  // navTab: alt/yan menüde hangi sekmenin vurgulanacağını tutar. `active`'ten
+  // ayrı tutulur çünkü "Keşfet"ten bir profile girmek ya da Ayarlar'ı açmak
+  // içerik olarak farklı bir sayfa gösterir ama navigasyonda geldiğin sekme
+  // (ör. Keşfet) vurgulu kalmalı — bu da Keşfet'ten profile girince "Profil"
+  // sekmesinin yanlışlıkla aktif görünmesi hatasını çözer.
+  const [navTab, setNavTab] = useState("feed");
   const [posts, setPosts] = useState([]);
   const [users, setUsers] = useState([]);
   const [follows, setFollows] = useState([]);
@@ -1663,6 +2383,10 @@ export default function Meydan() {
   const [viewingUserId, setViewingUserId] = useState(null); // null => kendi profilim
   const [commentsPost, setCommentsPost] = useState(null);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
+  const [savedAccounts, setSavedAccounts] = useState(() => accountsStore.getSavedAccounts());
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [blockedLoading, setBlockedLoading] = useState(false);
 
   const refreshPosts = useCallback(async () => setPosts(await api.fetchPosts()), []);
   const refreshUsers = useCallback(async () => setUsers(await api.fetchProfiles()), []);
@@ -1673,14 +2397,18 @@ export default function Meydan() {
     setChats(await api.fetchChats(session.user.id));
   }, []);
 
-  const loadUserFromSession = useCallback(async (sessionUser) => {
+  const loadUserFromSession = useCallback(async (session) => {
+    const sessionUser = session?.user || null;
     if (!sessionUser) {
       setUser(null);
       return;
     }
     try {
       const profile = await api.fetchProfile(sessionUser.id);
-      setUser({ ...profile, id: sessionUser.id, email: sessionUser.email });
+      const fullUser = { ...profile, id: sessionUser.id, email: sessionUser.email };
+      setUser(fullUser);
+      accountsStore.saveAccountSession(fullUser, session);
+      setSavedAccounts(accountsStore.getSavedAccounts());
     } catch (err) {
       console.error("Profil yüklenemedi", err);
       setUser(null);
@@ -1693,13 +2421,13 @@ export default function Meydan() {
     (async () => {
       const session = await api.getCurrentSession();
       if (mounted) {
-        await loadUserFromSession(session?.user || null);
+        await loadUserFromSession(session);
         setCheckingSession(false);
       }
     })();
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      await loadUserFromSession(session?.user || null);
+      await loadUserFromSession(session);
     });
 
     return () => {
@@ -1708,12 +2436,25 @@ export default function Meydan() {
     };
   }, [loadUserFromSession]);
 
+  const refreshBlocked = useCallback(async () => {
+    if (!user) return;
+    setBlockedLoading(true);
+    try {
+      setBlockedUsers(await api.fetchBlockedUsers(user.id));
+    } catch (err) {
+      console.error("Engellenen kullanıcılar yüklenemedi", err);
+    }
+    setBlockedLoading(false);
+  }, [user]);
+
   // Kullanıcı oturum açtığında ilk veri yükleme
   useEffect(() => {
     if (!user) return;
     setLoadingPosts(true);
     Promise.all([refreshPosts(), refreshUsers(), refreshFollows(), refreshChats()]).finally(() => setLoadingPosts(false));
-  }, [user, refreshPosts, refreshUsers, refreshFollows, refreshChats]);
+    refreshBlocked();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, refreshPosts, refreshUsers, refreshFollows, refreshChats]);
 
   // Realtime abonelikleri: yeni kullanıcı, yeni gönderi, yeni beğeni, yeni mesaj, takip
   useEffect(() => {
@@ -1796,9 +2537,76 @@ export default function Meydan() {
     }
   };
 
+  const blockedIds = useMemo(() => new Set(blockedUsers.map((b) => b.id)), [blockedUsers]);
+  const visiblePosts = useMemo(() => posts.filter((p) => !blockedIds.has(p.userId)), [posts, blockedIds]);
+
   const openProfile = (userId) => {
+    // navTab kasıtlı olarak değiştirilmiyor: Keşfet'ten ya da mesajlardan bir
+    // profile giriliyorsa alt menüde geldiğin sekme vurgulu kalmaya devam eder.
     setViewingUserId(userId === user.id ? null : userId);
     setActive("profile");
+  };
+
+  const openOwnProfileTab = () => {
+    setViewingUserId(null);
+    setActive("profile");
+    setNavTab("profile");
+  };
+
+  const openSettings = () => setActive("settings");
+
+  const handleBlockUser = async (targetUserId) => {
+    try {
+      await api.blockUser(user.id, targetUserId);
+      await Promise.all([refreshBlocked(), refreshFollows()]);
+      if (viewingUserId === targetUserId) {
+        setViewingUserId(null);
+        setActive("feed");
+        setNavTab("feed");
+      }
+    } catch (err) {
+      console.error("Kullanıcı engellenemedi", err);
+    }
+  };
+
+  const handleUnblockUser = async (targetUserId) => {
+    try {
+      await api.unblockUser(user.id, targetUserId);
+      await refreshBlocked();
+    } catch (err) {
+      console.error("Engel kaldırılamadı", err);
+    }
+  };
+
+  const handleSwitchAccount = async (account) => {
+    setShowAccountSwitcher(false);
+    if (account.id === user.id) return;
+    try {
+      const { error } = await supabase.auth.setSession({
+        access_token: account.access_token,
+        refresh_token: account.refresh_token,
+      });
+      if (error) throw error;
+      setActive("feed");
+      setNavTab("feed");
+      setViewingUserId(null);
+    } catch (err) {
+      console.error("Hesap değiştirilemedi, tekrar giriş gerekebilir", err);
+      accountsStore.removeAccount(account.id);
+      setSavedAccounts(accountsStore.getSavedAccounts());
+    }
+  };
+
+  const handleAddAccount = async () => {
+    setShowAccountSwitcher(false);
+    // Mevcut hesap zaten kayıtlı token'larıyla listede duruyor; sadece bu
+    // cihazdaki oturumu kapatıp (token'ları iptal etmeden) giriş ekranına dön.
+    await supabase.auth.signOut({ scope: "local" });
+  };
+
+  const handleRemoveSavedAccount = (accountId) => {
+    accountsStore.removeAccount(accountId);
+    setSavedAccounts(accountsStore.getSavedAccounts());
   };
 
   const openChatWith = async (otherUser) => {
@@ -1813,9 +2621,21 @@ export default function Meydan() {
   };
 
   const handleLogout = async () => {
+    if (user) accountsStore.removeAccount(user.id);
+    setSavedAccounts(accountsStore.getSavedAccounts());
     await api.signOut();
     setUser(null);
     setActive("feed");
+    setNavTab("feed");
+  };
+
+  const handleDeleteAccount = async () => {
+    await api.deleteAccount();
+    if (user) accountsStore.removeAccount(user.id);
+    setSavedAccounts(accountsStore.getSavedAccounts());
+    setUser(null);
+    setActive("feed");
+    setNavTab("feed");
   };
 
   if (checkingSession) {
@@ -1836,10 +2656,11 @@ export default function Meydan() {
   return (
     <div className="flex min-h-screen" style={{ background: COLORS.bg, color: COLORS.ivory, fontFamily: "system-ui, -apple-system, sans-serif" }}>
       <Sidebar
-        active={active}
+        active={navTab}
         setActive={(key) => {
           if (key === "profile") setViewingUserId(null);
           setActive(key);
+          setNavTab(key);
         }}
         onLogout={handleLogout}
         user={user}
@@ -1849,7 +2670,7 @@ export default function Meydan() {
           {active === "feed" && (
             <Feed
               loading={loadingPosts}
-              posts={posts}
+              posts={visiblePosts}
               currentUser={user}
               onToggleLike={toggleLike}
               onOpenProfile={openProfile}
@@ -1860,8 +2681,8 @@ export default function Meydan() {
           {active === "new" && <CreatePost user={user} onCreated={refreshPosts} goTo={setActive} />}
           {active === "discover" && (
             <Discover
-              posts={posts}
-              users={users}
+              posts={visiblePosts}
+              users={users.filter((u) => !blockedIds.has(u.id))}
               currentUser={user}
               follows={follows}
               onToggleFollow={toggleFollow}
@@ -1873,28 +2694,67 @@ export default function Meydan() {
             <Profile
               profileUser={profileUser}
               isOwnProfile={isOwnProfile}
-              posts={posts}
+              posts={visiblePosts}
               users={users}
               follows={follows}
               currentUser={user}
               onToggleFollow={toggleFollow}
               onEditProfile={() => setShowEditProfile(true)}
+              onOpenSettings={openSettings}
+              onSwitchAccount={() => setShowAccountSwitcher(true)}
               onMessage={() => openChatWith(profileUser)}
               onBack={() => setViewingUserId(null)}
               onOpenProfile={openProfile}
+              onBlockUser={handleBlockUser}
               postsLoading={loadingPosts}
             />
           )}
           {active === "messages" && (
             <Messages user={user} chats={chats} refreshChats={refreshChats} openChatId={openChatId} setOpenChatId={setOpenChatId} />
           )}
+          {active === "settings" && (
+            <SettingsPage
+              user={user}
+              onBack={() => setActive("profile")}
+              onEditProfile={() => setShowEditProfile(true)}
+              onLogout={handleLogout}
+              onDeleteAccount={handleDeleteAccount}
+              onSaved={(updated) => setUser((prev) => ({ ...prev, ...updated }))}
+              blockedUsers={blockedUsers}
+              blockedLoading={blockedLoading}
+              onUnblock={handleUnblockUser}
+              onLinkGoogle={async () => {
+                try {
+                  await api.linkGoogleAccount();
+                } catch (err) {
+                  console.error("Google hesabı bağlanamadı", err);
+                }
+              }}
+              onGoogleSignIn={async () => {
+                try {
+                  await api.signInWithGoogle();
+                } catch (err) {
+                  console.error("Google ile giriş başarısız", err);
+                }
+              }}
+            />
+          )}
+          {active === "manageAccounts" && (
+            <ManageAccountsPage
+              savedAccounts={savedAccounts}
+              currentUser={user}
+              onBack={() => setActive("profile")}
+              onRemove={handleRemoveSavedAccount}
+            />
+          )}
         </PageTransition>
       </div>
       <MobileNav
-        active={active}
+        active={navTab}
         setActive={(key) => {
           if (key === "profile") setViewingUserId(null);
           setActive(key);
+          setNavTab(key);
         }}
       />
 
@@ -1914,6 +2774,20 @@ export default function Meydan() {
           onSaved={(updated) => {
             setUser((prev) => ({ ...prev, ...updated }));
             refreshUsers();
+          }}
+        />
+      )}
+
+      {showAccountSwitcher && (
+        <AccountSwitcherSheet
+          currentUser={user}
+          savedAccounts={savedAccounts}
+          onClose={() => setShowAccountSwitcher(false)}
+          onSwitch={handleSwitchAccount}
+          onAddAccount={handleAddAccount}
+          onManage={() => {
+            setShowAccountSwitcher(false);
+            setActive("manageAccounts");
           }}
         />
       )}
