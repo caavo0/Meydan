@@ -20,3 +20,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
   },
 });
+
+// Debug amaçlı: tarayıcı konsolundan `supabase.auth.getSession()` gibi
+// komutlar çalıştırabilmek için global scope'a bağlıyoruz. Bu sadece
+// geliştirme/hata ayıklama kolaylığı sağlar, güvenlik açığı oluşturmaz
+// (anon key zaten public'tir, yalnızca RLS politikaları gerçek korumadır).
+if (typeof window !== "undefined") {
+  window.supabase = supabase;
+}
