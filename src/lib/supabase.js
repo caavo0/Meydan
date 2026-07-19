@@ -28,3 +28,31 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 if (typeof window !== "undefined") {
   window.supabase = supabase;
 }
+
+// Bazı ortamlarda (özellikle geliştirme sırasında modülün yeniden
+// yüklenmesi ya da sekme uzun süre aktif kalıp autoRefreshToken
+// zamanlayıcısının beklenmedik şekilde tetiklenmemesi durumunda) elde
+// süresi dolmuş bir access_token kalabiliyor. Kritik bir yazma işleminden
+// (mesaj gönderme, sohbet açma vb.) hemen önce bu fonksiyonu çağırarak
+// token'ın gerçekten geçerli olduğundan emin oluyoruz — pasif zamanlayıcıya
+// güvenmek yerine aktif/garantili bir kontrol.
+export async function ensureFreshSession() {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const session = data?.session;
+    if (!session) return null;
+    const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+    if (!expiresAt || expiresAt - Date.now() < 5 * 60 * 1000) {
+      const { data: refreshed, error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.error("[Meydan] Oturum tazelenemedi:", error);
+        return session;
+      }
+      return refreshed.session;
+    }
+    return session;
+  } catch (err) {
+    console.error("[Meydan] Oturum kontrol edilemedi:", err);
+    return null;
+  }
+}
