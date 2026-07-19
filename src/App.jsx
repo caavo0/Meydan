@@ -3024,7 +3024,7 @@ function Notifications({ notifications, loading, onOpenProfile, onBack }) {
 
 /* -------------------------------- Messages ---------------------------------- */
 
-function Messages({ user, chats, refreshChats, openChatId, setOpenChatId }) {
+function Messages({ user, chats, refreshChats, openChatId, setOpenChatId, onSessionExpired }) {
   const [draft, setDraft] = useState("");
   const [mobileShowChat, setMobileShowChat] = useState(!!openChatId);
   const [sending, setSending] = useState(false);
@@ -3042,7 +3042,11 @@ function Messages({ user, chats, refreshChats, openChatId, setOpenChatId }) {
     if (!draft.trim() || !selected) return;
     setSending(true);
     try {
-      await ensureFreshSession();
+      const freshSession = await ensureFreshSession();
+      if (!freshSession) {
+        onSessionExpired?.();
+        return;
+      }
       await api.sendMessage(selected.id, user.id, draft.trim());
       setDraft("");
       await refreshChats();
@@ -3472,7 +3476,11 @@ export default function Meydan() {
 
   const openChatWith = async (otherUser) => {
     try {
-      await ensureFreshSession();
+      const freshSession = await ensureFreshSession();
+      if (!freshSession) {
+        handleSessionExpired();
+        return;
+      }
       const conversationId = await api.findOrCreateConversation(user.id, otherUser.id);
       await refreshChats();
       setOpenChatId(conversationId);
@@ -3486,6 +3494,18 @@ export default function Meydan() {
     if (user) accountsStore.removeAccount(user.id);
     setSavedAccounts(accountsStore.getSavedAccounts());
     await api.signOut();
+    setUser(null);
+    setActive("feed");
+    setNavTab("feed");
+  };
+
+  // Oturum tazeleme başarısız olduğunda (refresh token geçersiz/tükenmiş)
+  // çağrılır: sessiz biçimde "auth.uid() null" isteklerine devam etmek
+  // yerine kullanıcıyı açıkça giriş ekranına döndürür.
+  const handleSessionExpired = () => {
+    console.warn("[Meydan] Oturum süresi doldu, giriş ekranına yönlendiriliyor.");
+    if (user) accountsStore.removeAccount(user.id);
+    setSavedAccounts(accountsStore.getSavedAccounts());
     setUser(null);
     setActive("feed");
     setNavTab("feed");
@@ -3630,7 +3650,7 @@ export default function Meydan() {
             />
           )}
           {active === "messages" && (
-            <Messages user={user} chats={chats} refreshChats={refreshChats} openChatId={openChatId} setOpenChatId={setOpenChatId} />
+            <Messages user={user} chats={chats} refreshChats={refreshChats} openChatId={openChatId} setOpenChatId={setOpenChatId} onSessionExpired={handleSessionExpired} />
           )}
           {active === "settings" && (
             <SettingsPage
