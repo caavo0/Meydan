@@ -36,9 +36,17 @@ export async function getCurrentSession() {
    ========================================================================== */
 
 export async function fetchProfile(userId) {
-  const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
+  // profile_private (email/phone) sadece satırın sahibi tarafından
+  // okunabilir (bkz. migration 007); başkasının profiline bakılırken
+  // bu join otomatik olarak boş döner, hata vermez.
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*, profile_private(phone)")
+    .eq("id", userId)
+    .single();
   if (error) throw error;
-  return data;
+  const { profile_private, ...profile } = data;
+  return { ...profile, phone: profile_private?.phone ?? null };
 }
 
 export async function fetchProfiles() {
@@ -430,7 +438,9 @@ export async function fetchNotifications(userId) {
 
 export async function uploadCover(userId, file) {
   const ext = file.name?.split(".").pop() || "jpg";
-  const path = `covers/${userId}/cover-${Date.now()}.${ext}`;
+  // Path'in ilk segmenti auth.uid() olmak zorunda (bkz. migration 007
+  // storage policy'si); bu yüzden userId artık path'in başında.
+  const path = `${userId}/covers/cover-${Date.now()}.${ext}`;
   const { error: uploadError } = await supabase.storage.from("images").upload(path, file, {
     cacheControl: "3600",
     upsert: false,
@@ -452,7 +462,12 @@ export async function changeEmail(newEmail) {
 }
 
 export async function updatePhone(userId, phone) {
-  return updateProfile(userId, { phone });
+  // phone artık profiles değil, kilitli profile_private tablosunda.
+  const { error } = await supabase
+    .from("profile_private")
+    .upsert({ user_id: userId, phone }, { onConflict: "user_id" });
+  if (error) throw error;
+  return { phone };
 }
 
 export async function linkGoogleAccount() {
