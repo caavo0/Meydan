@@ -45,8 +45,15 @@ export async function ensureFreshSession() {
     if (!expiresAt || expiresAt - Date.now() < 5 * 60 * 1000) {
       const { data: refreshed, error } = await supabase.auth.refreshSession();
       if (error) {
-        console.error("[Meydan] Oturum tazelenemedi:", error);
-        return session;
+        // ÖNEMLİ: burada eski (süresi geçmiş) session'ı geri döndürmüyoruz.
+        // refreshSession() başarısız olduğunda supabase-js session'ı zaten
+        // kendi içinde temizliyor (auth.uid() artık null dönecek); eski
+        // session objesini döndürmek çağıranı yanıltıp "auth.uid() is not
+        // null" gerektiren INSERT/UPDATE'lerin 42501 ile başarısız olmasına
+        // yol açıyordu. null döndürerek çağıran tarafın (App.jsx) kullanıcıyı
+        // login ekranına yönlendirmesini sağlıyoruz.
+        console.error("[Meydan] Oturum tazelenemedi, kullanıcı çıkışa yönlendirilecek:", error);
+        return null;
       }
       return refreshed.session;
     }
