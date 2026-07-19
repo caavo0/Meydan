@@ -55,7 +55,7 @@ import {
   ChevronLeft,
   Music2,
 } from "lucide-react";
-import { supabase } from "./lib/supabase";
+import { supabase, ensureFreshSession } from "./lib/supabase";
 import * as api from "./lib/api";
 import * as accountsStore from "./lib/accounts";
 
@@ -3042,6 +3042,7 @@ function Messages({ user, chats, refreshChats, openChatId, setOpenChatId }) {
     if (!draft.trim() || !selected) return;
     setSending(true);
     try {
+      await ensureFreshSession();
       await api.sendMessage(selected.id, user.id, draft.trim());
       setDraft("");
       await refreshChats();
@@ -3471,6 +3472,7 @@ export default function Meydan() {
 
   const openChatWith = async (otherUser) => {
     try {
+      await ensureFreshSession();
       const conversationId = await api.findOrCreateConversation(user.id, otherUser.id);
       await refreshChats();
       setOpenChatId(conversationId);
