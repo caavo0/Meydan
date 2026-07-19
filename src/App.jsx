@@ -3226,6 +3226,37 @@ export default function Meydan() {
     };
   }, [loadUserFromSession]);
 
+  // Mobil tarayıcılarda sekme/uygulama arka planda kalınca (ekran kilidi,
+  // uygulama değiştirme vb.) Supabase'in autoRefreshToken zamanlayıcısı
+  // duraklayabiliyor. Bu da öne dönüldüğünde elde bayat (süresi dolmuş)
+  // bir access_token kalmasına ve "row-level security policy" gibi
+  // auth.uid() null döndüğü için oluşan hatalara yol açıyor. Sekme her
+  // öne geldiğinde oturumu kontrol edip gerekirse tazeliyoruz.
+  useEffect(() => {
+    const refreshIfStale = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const { data } = await supabase.auth.getSession();
+        const session = data?.session;
+        if (!session) return;
+        const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+        // Süresi dolmuşsa ya da 2 dakikadan az kalmışsa proaktif olarak yenile.
+        if (expiresAt && expiresAt - Date.now() < 2 * 60 * 1000) {
+          await supabase.auth.refreshSession();
+        }
+      } catch (err) {
+        console.error("Oturum tazelenemedi", err);
+      }
+    };
+    refreshIfStale();
+    document.addEventListener("visibilitychange", refreshIfStale);
+    window.addEventListener("focus", refreshIfStale);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshIfStale);
+      window.removeEventListener("focus", refreshIfStale);
+    };
+  }, []);
+
   const refreshBlocked = useCallback(async () => {
     if (!user) return;
     setBlockedLoading(true);
